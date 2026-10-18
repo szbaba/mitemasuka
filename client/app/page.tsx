@@ -28,6 +28,10 @@ import {
   Info,
   Globe,
   RefreshCw,
+  Megaphone,
+  Mic,
+  MicOff,
+  Radio,
 } from 'lucide-react';
 
 interface WsClient {
@@ -72,6 +76,29 @@ interface ChatItem {
   timestamp: string;
 }
 
+interface BroadcastMessage {
+  id: string;
+  text: string;
+  isLiveVoice?: boolean;
+  timestamp: string;
+}
+
+interface BroadcastChannel {
+  id: string;
+  title: string;
+  ownerClientId: string;
+  ownerName: string;
+  lat: number;
+  lng: number;
+  radius: number;
+  plan: string;
+  distance?: number;
+  listenerCount?: number;
+  messages: BroadcastMessage[];
+  reactions: Record<string, number>;
+  createdAt: number;
+}
+
 const RADIUS_OPTIONS = [
   { value: 100, label: '100 m', requiresPlus: false },
   { value: 500, label: '500 m', requiresPlus: true },
@@ -79,7 +106,35 @@ const RADIUS_OPTIONS = [
   { value: 5000, label: '5 km', requiresPlus: true },
 ];
 
+const CHANNEL_PLANS = [
+  {
+    id: 'guide_500m',
+    radius: 500,
+    title: 'Rehber / Seminer',
+    rangeLabel: '500 m Çap',
+    duration: '2 Saatlik Yayın',
+    price: '199 ₺',
+  },
+  {
+    id: 'concert_1km',
+    radius: 1000,
+    title: 'Konser / Konferans',
+    rangeLabel: '1 km Çap',
+    duration: '24 Saatlik Yayın',
+    price: '499 ₺',
+  },
+  {
+    id: 'rally_5km',
+    radius: 5000,
+    title: 'Miting / Festival',
+    rangeLabel: '5 km Çap',
+    duration: '24 Saatlik Yayın',
+    price: '1.499 ₺',
+  },
+];
+
 const EMOJI_LIST = ['❤️', '😂', '👍', '🔥'];
+const CHANNEL_REACTIONS = ['👏', '🔥', '❤️', '👍'];
 
 function getDistanceMeters(
   lat1?: number | null,
@@ -153,6 +208,20 @@ export default function MitemasukaPage() {
   const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
   const [showMembersDrawer, setShowMembersDrawer] = useState<boolean>(false);
 
+  // 📢 Tek Yönlü Megafon / Anons Kanalları Durumu
+  const [nearbyChannels, setNearbyChannels] = useState<BroadcastChannel[]>([]);
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [showCreateChannelModal, setShowCreateChannelModal] =
+    useState<boolean>(false);
+  const [channelTitleInput, setChannelTitleInput] = useState<string>('');
+  const [selectedChannelPlan, setSelectedChannelPlan] = useState<
+    (typeof CHANNEL_PLANS)[number]
+  >(CHANNEL_PLANS[1]);
+  const [channelInputText, setChannelInputText] = useState<string>('');
+  const [isDictating, setIsDictating] = useState<boolean>(false);
+  const [liveTranscriptPreview, setLiveTranscriptPreview] =
+    useState<string>('');
+
   // Menü ve Modallar
   const [showHamburgerMenu, setShowHamburgerMenu] = useState<boolean>(false);
   const [showPlusModal, setShowPlusModal] = useState<boolean>(false);
@@ -192,10 +261,13 @@ export default function MitemasukaPage() {
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const channelEndRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const soundEnabledRef = useRef<boolean>(true);
   const myIdRef = useRef<string>('');
   const watchIdRef = useRef<number | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -210,6 +282,11 @@ export default function MitemasukaPage() {
     };
   }, [baseCoords, simOffsetMeters]);
 
+  const activeChannel = React.useMemo(
+    () => nearbyChannels.find((c) => c.id === activeChannelId) || null,
+    [nearbyChannels, activeChannelId]
+  );
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -220,7 +297,6 @@ export default function MitemasukaPage() {
     } catch {}
   }, []);
 
-  // WebSocket Bağlantısı (Ekran uyandığında veya ağ değiştiğinde anında yeniden bağlanır)
   useEffect(() => {
     let storedClientId = '';
     try {
@@ -318,6 +394,10 @@ export default function MitemasukaPage() {
             }
           } else if (event === 'room_users') {
             setRoomUsers(data.users || []);
+          } else if (event === 'nearby_channels') {
+            if (Array.isArray(data)) {
+              setNearbyChannels(data);
+            }
           } else if (event === 'paywall_trigger') {
             setPaywallReason(data.message);
             setShowPlusModal(true);
@@ -395,7 +475,6 @@ export default function MitemasukaPage() {
     };
   }, []);
 
-  // Konum alma ve izleme fonksiyonu (Hem otomatik hem de kullanıcı butona dokunduğunda çalışır)
   const startLocationTracking = useCallback(() => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
       setGeoError('Tarayıcınız konum özelliğini desteklemiyor.');
@@ -475,6 +554,10 @@ export default function MitemasukaPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typingUsers]);
 
+  useEffect(() => {
+    channelEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeChannel?.messages]);
+
   const handleSelectRadius = (opt: {
     value: number;
     label: string;
@@ -531,6 +614,101 @@ export default function MitemasukaPage() {
     setPaywallReason(null);
   };
 
+  // 📢 Tek Yönlü Kanal (Megafon) Başlatma
+  const handleCreateChannel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!socket || !channelTitleInput.trim() || !effectiveCoords) return;
+
+    socket.emit('create_channel', {
+      title: channelTitleInput.trim(),
+      radius: selectedChannelPlan.radius,
+      plan: selectedChannelPlan.id,
+    });
+    setChannelTitleInput('');
+    setShowCreateChannelModal(false);
+  };
+
+  // 📢 Tek Yönlü Kanala Yazılı Anons Gönderme
+  const handleSendChannelBroadcast = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!socket || !activeChannel || !channelInputText.trim()) return;
+
+    socket.emit('send_channel_broadcast', {
+      channelId: activeChannel.id,
+      text: channelInputText.trim(),
+      isLiveVoice: false,
+    });
+    setChannelInputText('');
+  };
+
+  // 🎙️ Canlı Sesli Dikte (Speech-to-Text): Konuşmacının sesini yazıya çevirip anında kanala akıtır
+  const toggleLiveVoiceDictation = () => {
+    if (isDictating) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsDictating(false);
+      setLiveTranscriptPreview('');
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRec =
+      (window as any).SpeechRecognition ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRec) {
+      alert(
+        'Tarayıcınız canlı ses-metin (SpeechRecognition) özelliğini desteklemiyor. Chrome veya Safari kullanabilirsiniz.'
+      );
+      return;
+    }
+
+    const recognition = new SpeechRec();
+    recognition.lang = 'tr-TR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          const finalSentence = String(transcript || '').trim();
+          if (finalSentence && socket && activeChannel) {
+            socket.emit('send_channel_broadcast', {
+              channelId: activeChannel.id,
+              text: finalSentence,
+              isLiveVoice: true,
+            });
+          }
+          setLiveTranscriptPreview('');
+        } else {
+          interim += transcript;
+          setLiveTranscriptPreview(interim);
+        }
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsDictating(false);
+      setLiveTranscriptPreview('');
+    };
+
+    recognition.onend = () => {
+      setIsDictating(false);
+      setLiveTranscriptPreview('');
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsDictating(true);
+  };
+
   const handleSaveNickname = (e: React.FormEvent) => {
     e.preventDefault();
     if (!socket || !nicknameInput.trim()) return;
@@ -585,9 +763,8 @@ export default function MitemasukaPage() {
 
   return (
     <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-[#0b141a] text-[#e9edef] border-x border-[#222d34] shadow-2xl overflow-hidden">
-      {/* ÜST BAR (Mobil ve Masaüstünde Asla Üst Üste Binmeyen 2 Katmanlı Tasarım) */}
+      {/* ÜST BAR */}
       <header className="bg-[#202c33] border-b border-[#2a3942] z-20 shrink-0">
-        {/* 1. Satır: Logo, Oda Bilgisi ve Hamburger Menü */}
         <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
           <div
             className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1"
@@ -638,7 +815,6 @@ export default function MitemasukaPage() {
             </div>
           </div>
 
-          {/* Masaüstünde Menzil Seçici Sağda, Mobilde Alt Satırda */}
           <div className="hidden sm:flex bg-[#111b21] p-0.5 rounded-lg border border-[#2a3942] shrink-0">
             {RADIUS_OPTIONS.map((opt) => {
               const locked = opt.requiresPlus && !isPlus;
@@ -675,7 +851,7 @@ export default function MitemasukaPage() {
           </button>
         </div>
 
-        {/* 2. Satır (Sadece Mobil Ekranlarda): Tam Genişlikte Ferah Menzil Seçici */}
+        {/* 2. Satır (Mobil Menzil Seçici) */}
         <div className="flex sm:hidden px-3 pb-2">
           <div className="grid grid-cols-4 w-full bg-[#111b21] p-1 rounded-xl border border-[#2a3942] gap-1">
             {RADIUS_OPTIONS.map((opt) => {
@@ -702,10 +878,48 @@ export default function MitemasukaPage() {
         </div>
       </header>
 
+      {/* 🔴 YAKINDAKİ TEK YÖNLÜ CANLI ANONS KANALLARI BANDI (Konser / Miting / Konferans) */}
+      {nearbyChannels.length > 0 && (
+        <div className="bg-gradient-to-r from-rose-950/90 via-amber-950/80 to-rose-950/90 border-b border-rose-500/40 px-3.5 py-2 shrink-0 space-y-1.5">
+          {nearbyChannels.map((ch) => {
+            const lastMsg =
+              ch.messages[ch.messages.length - 1]?.text || 'Canlı yayın aktif';
+            return (
+              <div
+                key={ch.id}
+                onClick={() => setActiveChannelId(ch.id)}
+                className="flex items-center justify-between gap-2 cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold uppercase tracking-wider shrink-0 animate-pulse">
+                    <Radio className="w-3 h-3" /> CANLI KANAL
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-amber-200 truncate">
+                      📢 {ch.title}{' '}
+                      <span className="text-[11px] font-normal text-rose-200/80">
+                        ({ch.ownerName} • {ch.listenerCount || 1} dinleyici)
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-white/90 truncate">
+                      {lastMsg}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold text-amber-300 bg-black/40 px-2.5 py-1 rounded-lg border border-amber-400/30 shrink-0 group-hover:bg-amber-400 group-hover:text-black transition">
+                  Dinle &rarr;
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* HAMBURGER MENÜ */}
       {showHamburgerMenu && (
         <div className="absolute top-[60px] right-3 w-72 bg-[#202c33] border border-[#2a3942] rounded-2xl shadow-2xl z-40 py-2 text-sm divide-y divide-[#2a3942]">
-          <div className="px-3 py-2">
+          <div className="px-3 py-2 space-y-2">
+            {/* Bireysel Plus */}
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
@@ -720,6 +934,23 @@ export default function MitemasukaPage() {
               </span>
               <span className="text-xs bg-amber-400 text-black px-2 py-0.5 rounded-full font-bold">
                 {isPlus ? 'VIP' : 'Yükselt'}
+              </span>
+            </button>
+
+            {/* 📢 KANAL KUR (TEK YÖNLÜ SESLEN - KONSER/MİTİNG/KONFERANS) */}
+            <button
+              onClick={() => {
+                setShowHamburgerMenu(false);
+                setShowCreateChannelModal(true);
+              }}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-rose-500/25 to-orange-500/25 border border-rose-400/40 text-rose-200 font-semibold hover:brightness-110 transition"
+            >
+              <span className="flex items-center gap-2">
+                <Megaphone className="w-4 h-4 text-rose-400" />
+                <span>Kanal Kur (Tek Yönlü Seslen)</span>
+              </span>
+              <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold">
+                PRO
               </span>
             </button>
           </div>
@@ -982,7 +1213,7 @@ export default function MitemasukaPage() {
         </div>
       )}
 
-      {/* KONUM BEKLENİYOR (KARŞILAMA & iOS KONUM İZNİ REHBERİ EKRANI) */}
+      {/* KONUM BEKLENİYOR */}
       {!effectiveCoords ? (
         <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-[#00a884]/15 border border-[#00a884]/40 flex items-center justify-center text-[#00a884] shadow-xl shrink-0">
@@ -1004,7 +1235,6 @@ export default function MitemasukaPage() {
             </p>
           </div>
 
-          {/* ANA KONUM İZNİ İSTEME BUTONU (Kullanıcı dokunuşu ile tetikler) */}
           <button
             onClick={startLocationTracking}
             disabled={isRequestingGeo}
@@ -1020,7 +1250,6 @@ export default function MitemasukaPage() {
             </span>
           </button>
 
-          {/* EĞER iPHONE / TARAYICI KONUM İZNİNİ OTOMATİK REDDEDİYORSA AÇIK ADIMLAR */}
           {geoError === 'PERMISSION_DENIED' && (
             <div className="w-full max-w-md bg-[#182229] border border-amber-500/40 rounded-2xl p-4 text-left space-y-2.5 text-xs shadow-lg">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
@@ -1050,7 +1279,10 @@ export default function MitemasukaPage() {
                 </li>
                 <li>
                   Safari&apos;deyseniz adres çubuğunun solundaki{' '}
-                  <strong>aA / sol ikon &rarr; Web Sitesi Ayarları &rarr; Konum &rarr; İzin Ver</strong>{' '}
+                  <strong>
+                    aA / sol ikon &rarr; Web Sitesi Ayarları &rarr; Konum &rarr;
+                    İzin Ver
+                  </strong>{' '}
                   yapıp yukarıdaki yeşil butona tekrar basın.
                 </li>
               </ol>
@@ -1326,7 +1558,6 @@ export default function MitemasukaPage() {
 
       {/* ALT MESAJ YAZMA ALANI (2 SATIRLI TASARIM) */}
       <footer className="bg-[#202c33] px-3 pt-2.5 pb-2 border-t border-[#2a3942] shrink-0 space-y-2">
-        {/* 1. Satır: Mesaj Yazma Kutusu ve Gönder Butonu */}
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
           <input
             type="text"
@@ -1357,7 +1588,6 @@ export default function MitemasukaPage() {
           </button>
         </form>
 
-        {/* 2. Satır: Günlük Hak Göstergesi ve Uygulama Mesajı */}
         <div className="flex items-center justify-between px-1 text-[11px] text-[#8696a0]">
           <button
             type="button"
@@ -1399,6 +1629,275 @@ export default function MitemasukaPage() {
           </button>
         </div>
       </footer>
+
+      {/* MODAL: 📢 TEK YÖNLÜ KANAL (MEGAFON) KURMA EKRANI */}
+      {showCreateChannelModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleCreateChannel}
+            className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+          >
+            <button
+              type="button"
+              onClick={() => setShowCreateChannelModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <Megaphone className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">
+                  Tek Yönlü Kanal Kur 📢
+                </h3>
+                <p className="text-xs text-[#8696a0]">
+                  Konser, miting, konferans veya gezilerde çevrendekilere yazılı
+                  ve sesli altyazı ile tek yönlü seslen
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#8696a0]">
+                Kanal / Etkinlik Başlığı
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={60}
+                value={channelTitleInput}
+                onChange={(e) => setChannelTitleInput(e.target.value)}
+                placeholder="Örn: Ana Sahne Canlı Altyazı / Miting Anons..."
+                className="w-full bg-[#111b21] border border-[#2a3942] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-[#8696a0]">
+                Yayın Menzili & Paketi Seçin
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {CHANNEL_PLANS.map((pkg) => (
+                  <button
+                    type="button"
+                    key={pkg.id}
+                    onClick={() => setSelectedChannelPlan(pkg)}
+                    className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-between ${
+                      selectedChannelPlan.id === pkg.id
+                        ? 'bg-rose-500/20 border-rose-400 text-white shadow-lg'
+                        : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
+                    }`}
+                  >
+                    <span className="text-[10px] font-bold text-rose-300 uppercase">
+                      {pkg.rangeLabel}
+                    </span>
+                    <span className="text-base font-extrabold text-white my-1">
+                      {pkg.price}
+                    </span>
+                    <span className="text-[11px] font-medium leading-tight">
+                      {pkg.title}
+                    </span>
+                    <span className="text-[9px] text-[#8696a0] mt-0.5">
+                      {pkg.duration}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-[#111b21] p-3 rounded-2xl border border-[#2a3942] text-xs text-[#8696a0] space-y-1">
+              <div>
+                🎙️ <strong>Canlı Sesli Altyazı (Speech-to-Text):</strong> Siz
+                mikrofona konuştukça cümleleriniz otomatik yazıya çevrilip
+                menzildeki herkesin ekranına düşer.
+              </div>
+              <div>
+                🔇 <strong>Tek Yönlü Akış:</strong> Dinleyiciler mesaj yazıp
+                ekranı kirletemez, sadece alkış/tepki gönderebilir.
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!channelTitleInput.trim()}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 text-black font-extrabold text-sm hover:brightness-110 transition shadow-lg disabled:opacity-40"
+            >
+              📢 Kanalı Hemen Başlat ({selectedChannelPlan.rangeLabel})
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* TAM EKRAN TEK YÖNLÜ CANLI KANAL (MEGAFON) İZLEME & YAYIN PANELİ */}
+      {activeChannel && (
+        <div className="fixed inset-0 bg-[#0b141a] z-50 flex flex-col max-w-2xl mx-auto border-x border-[#222d34]">
+          {/* Kanal Üst Barı */}
+          <div className="bg-gradient-to-r from-rose-950 via-[#202c33] to-rose-950 px-4 py-3 border-b border-rose-500/30 flex items-center justify-between gap-2 shrink-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold uppercase animate-pulse">
+                  🔴 CANLI KANAL
+                </span>
+                <span className="text-xs text-amber-300 font-semibold">
+                  {activeChannel.radius >= 1000
+                    ? `${activeChannel.radius / 1000} km`
+                    : `${activeChannel.radius} m`}{' '}
+                  Menzil • {activeChannel.listenerCount || 1} Dinleyici
+                </span>
+              </div>
+              <h2 className="text-base font-extrabold text-white truncate mt-1">
+                📢 {activeChannel.title}
+              </h2>
+              <p className="text-xs text-[#8696a0]">
+                Konuşmacı: <strong className="text-white">{activeChannel.ownerName}</strong>
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {activeChannel.ownerClientId === myClientId && (
+                <button
+                  onClick={() => {
+                    socket?.emit('close_channel', {
+                      channelId: activeChannel.id,
+                    });
+                    setActiveChannelId(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-rose-600/20 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-600 hover:text-white transition"
+                >
+                  Yayını Bitir
+                </button>
+              )}
+              <button
+                onClick={() => setActiveChannelId(null)}
+                className="p-2 rounded-xl bg-[#111b21] border border-[#2a3942] text-[#e9edef]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Kanal Anons ve Canlı Altyazı Akışı (Büyük Puntolu Okunaklı Görünüm) */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {activeChannel.messages.map((bMsg) => (
+              <div
+                key={bMsg.id}
+                className="bg-[#202c33] border border-[#2a3942] rounded-2xl p-4 shadow-lg space-y-1.5"
+              >
+                <div className="flex items-center justify-between text-xs text-[#8696a0]">
+                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                    {bMsg.isLiveVoice ? (
+                      <>
+                        <Mic className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                        <span>Canlı Sesli Altyazı</span>
+                      </>
+                    ) : (
+                      <>
+                        <Megaphone className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Yazılı Duyuru</span>
+                      </>
+                    )}
+                  </span>
+                  <span>{formatTime(bMsg.timestamp)}</span>
+                </div>
+                <p className="text-base sm:text-lg font-medium text-white leading-relaxed whitespace-pre-wrap">
+                  {bMsg.text}
+                </p>
+              </div>
+            ))}
+
+            {/* Konuşmacı o an konuşurken anlık önizleme */}
+            {liveTranscriptPreview && (
+              <div className="bg-rose-950/40 border border-rose-500/40 rounded-2xl p-4 text-rose-200 italic animate-pulse">
+                🎙️ {liveTranscriptPreview}...
+              </div>
+            )}
+
+            <div ref={channelEndRef} />
+          </div>
+
+          {/* Kanal Alt Barı: Canlı Tepkiler + (Sadece Yayıncı İçin) Sesli Dikte & Mesaj Gönderme */}
+          <div className="bg-[#202c33] p-3 border-t border-[#2a3942] space-y-2.5 shrink-0">
+            {/* Dinleyici Alkış / Tepki Barı */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-[#8696a0]">Canlı Tepki Ver:</span>
+              <div className="flex items-center gap-2">
+                {CHANNEL_REACTIONS.map((em) => (
+                  <button
+                    key={em}
+                    onClick={() =>
+                      socket?.emit('react_channel', {
+                        channelId: activeChannel.id,
+                        emoji: em,
+                      })
+                    }
+                    className="px-3 py-1.5 rounded-full bg-[#111b21] hover:bg-[#2a3942] border border-[#2a3942] text-xs font-bold flex items-center gap-1.5 active:scale-95 transition"
+                  >
+                    <span>{em}</span>
+                    <span className="text-amber-300">
+                      {activeChannel.reactions?.[em] || 0}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {activeChannel.ownerClientId === myClientId ? (
+              <form
+                onSubmit={handleSendChannelBroadcast}
+                className="flex items-center gap-2"
+              >
+                <button
+                  type="button"
+                  onClick={toggleLiveVoiceDictation}
+                  className={`px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 transition ${
+                    isDictating
+                      ? 'bg-rose-600 text-white animate-pulse shadow-lg'
+                      : 'bg-[#111b21] border border-[#2a3942] text-rose-300 hover:text-white'
+                  }`}
+                  title="Mikrofona konuştuğunuzu otomatik yazıya çevirip herkese gönderir"
+                >
+                  {isDictating ? (
+                    <>
+                      <MicOff className="w-4 h-4" />
+                      <span>Canlı Ses Açık</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-4 h-4" />
+                      <span>Sesli Dikte</span>
+                    </>
+                  )}
+                </button>
+
+                <input
+                  type="text"
+                  enterKeyHint="send"
+                  value={channelInputText}
+                  onChange={(e) => setChannelInputText(e.target.value)}
+                  placeholder="Tüm dinleyicilere yazılı duyuru gönder..."
+                  className="flex-1 min-w-0 bg-[#2a3942] text-white placeholder-[#8696a0] text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+
+                <button
+                  type="submit"
+                  disabled={!channelInputText.trim()}
+                  className="w-10 h-10 rounded-full bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-black flex items-center justify-center shrink-0"
+                >
+                  <Send className="w-5 h-5 translate-x-[1px]" />
+                </button>
+              </form>
+            ) : (
+              <div className="text-center text-xs text-[#8696a0] bg-[#111b21] py-2 rounded-xl border border-[#2a3942]">
+                🔇 Bu tek yönlü bir anons kanalıdır. Sadece konuşmacı (
+                <strong>{activeChannel.ownerName}</strong>) ileti gönderebilir.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MODAL 0: 📖 MITEMASUKA NEDİR? */}
       {showStoryModal && (
@@ -1472,9 +1971,9 @@ export default function MitemasukaPage() {
                     buluşturur.
                   </p>
                   <p>
-                    • <strong>Anı Yaşa:</strong> Mekandan uzaklaştığın anda
-                    odadan otomatik düşersin. Sahte profiller yok, sadece şu an
-                    etrafında olan gerçek insanlar var.
+                    • <strong>📢 Tek Yönlü Megafon Kanalı:</strong> Konser,
+                    miting, konferans veya gezilerde konuşmacının sesi anında
+                    yazılı altyazı olarak menzildeki herkesin ekranına düşer.
                   </p>
                 </div>
               </div>
@@ -1502,10 +2001,9 @@ export default function MitemasukaPage() {
                     live <strong>100-meter</strong> radius room instantly.
                   </p>
                   <p>
-                    • <strong>Hyper-Local Reality:</strong> Only people
-                    physically within 100 meters of you right now can see and
-                    chat in your room. Walk away, and you leave the room
-                    automatically.
+                    • <strong>📢 Live Broadcast Channels:</strong> One-way live
+                    voice-to-text captions for concerts, rallies, lectures, and
+                    guided tours.
                   </p>
                 </div>
               </div>

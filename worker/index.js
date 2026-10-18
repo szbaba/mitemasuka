@@ -1,6 +1,6 @@
 /**
  * Mitemasuka (見てますか?) — Cloudflare Workers + Durable Objects
- * 7/24 Kesintisiz Gerçek Zamanlı WebSocket & Haversine Oda Sunucusu (ws.mitemasuka.com)
+ * 7/24 Kesintisiz Gerçek Zamanlı WebSocket, Haversine Oda & Tek Yönlü Megafon Kanal Sunucusu (ws.mitemasuka.com)
  */
 
 const FREE_DAILY_MESSAGE_LIMIT = 15;
@@ -41,12 +41,26 @@ export class MitemasukaHub {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    // socketId -> { id, ws, clientId, username, color, isPlus, plusPlan, ghostMode, lat, lng, radius, roomId, lastMsgAt }
     this.users = new Map();
-    // clientId -> { clientId, username, color, isPlus, plusPlan, ghostMode, dailyCount, quotaDay, reportedBy: Set, isBanned }
     this.profiles = new Map();
-    // roomId -> { id, centerLat, centerLng, radius, messages: [], createdAt }
     this.rooms = new Map();
+    /**
+     * Tek Yönlü Megafon / Anons Kanalları
+     * channelId -> {
+     *   id: string,
+     *   title: string,
+     *   ownerClientId: string,
+     *   ownerName: string,
+     *   lat: number,
+     *   lng: number,
+     *   radius: number (500 | 1000 | 5000),
+     *   plan: string,
+     *   messages: Array<{ id, text, isLiveVoice, timestamp }>,
+     *   reactions: { '👏': number, '🔥': number, '❤️': number, '👍': number },
+     *   createdAt: number
+     * }
+     */
+    this.channels = new Map();
   }
 
   sendEvent(ws, event, data) {
@@ -60,6 +74,50 @@ export class MitemasukaHub {
       if (u.roomId === roomId && sockId !== excludeSocketId) {
         this.sendEvent(u.ws, event, data);
       }
+    }
+  }
+
+  /**
+   * Belirli bir kullanıcıya menzili içindeki aktif Tek Yönlü Kanalları gönderir
+   */
+  sendNearbyChannelsToUser(user) {
+    if (user.lat === null || user.lng === null) return;
+    const nearby = [];
+    for (const [, ch] of this.channels.entries()) {
+      const dist = calculateDistanceMeters(
+        user.lat,
+        user.lng,
+        ch.lat,
+        ch.lng
+      );
+      if (dist <= ch.radius) {
+        // O kanalın menzilindeki toplam dinleyici sayısını hesapla
+        let listenerCount = 0;
+        for (const [, u] of this.users.entries()) {
+          if (
+            u.lat !== null &&
+            u.lng !== null &&
+            calculateDistanceMeters(u.lat, u.lng, ch.lat, ch.lng) <= ch.radius
+          ) {
+            listenerCount++;
+          }
+        }
+        nearby.push({
+          ...ch,
+          distance: Math.round(dist),
+          listenerCount,
+        });
+      }
+    }
+    this.sendEvent(user.ws, 'nearby_channels', nearby);
+  }
+
+  /**
+   * Tüm bağlı kullanıcılara güncel yakın kanalları bildirir
+   */
+  broadcastNearbyChannelsToAll() {
+    for (const [, u] of this.users.entries()) {
+      this.sendNearbyChannelsToUser(u);
     }
   }
 
@@ -171,6 +229,9 @@ export class MitemasukaHub {
     user.lat = lat;
     user.lng = lng;
     user.radius = targetRadius;
+
+    // Kullanıcının yakınındaki Tek Yönlü Kanalları da gönder
+    this.sendNearbyChannelsToUser(user);
 
     if (user.roomId && this.rooms.has(user.roomId)) {
       const currentRoom = this.rooms.get(user.roomId);
@@ -293,6 +354,109 @@ export class MitemasukaHub {
         return;
       }
       this.assignUserToLocationRoom(user, data.lat, data.lng, data.radius || 100);
+      return;
+    }
+
+    // 📢 TEK YÖNLÜ KANAL (MEGAFON) KURMA
+    if (event === 'create_channel') {
+      if (user.lat === null || user.lng === null) return;
+      const title = String(data?.title || '')
+        .trim()
+        .slice(0, 60);
+      if (!title) return;
+
+      const allowedRadii = [500, 1000, 5000];
+      const radius = allowedRadii.includes(Number(data?.radius))
+        ? Number(data.radius)
+        : 1000;
+      const plan = String(data?.plan || 'event_1km');
+
+      const channelId = `ch_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+
+      const newChannel = {
+        id: channelId,
+        title,
+        ownerClientId: user.clientId,
+        ownerName: user.username,
+        lat: user.lat,
+        lng: user.lng,
+        radius,
+        plan,
+        messages: [
+          {
+            id: `bmsg_${Date.now()}`,
+            text: `📢 "${title}" canlı anons kanalı başlatıldı. Konuşmacının yazılı ve sesli duyuruları buradan anlık akacaktır.`,
+            isLiveVoice: false,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        reactions: { '👏': 0, '🔥': 0, '❤️': 0, '👍': 0 },
+        createdAt: Date.now(),
+      };
+
+      this.channels.set(channelId, newChannel);
+      this.broadcastNearbyChannelsToAll();
+
+      // Odaya da sistem bildirimi düşür
+      if (user.roomId) {
+        this.broadcastToRoom(user.roomId, 'system_message', {
+          id: `sys_${Date.now()}`,
+          type: 'info',
+          text: `📢 ${user.username} yeni bir Tek Yönlü Anons Kanalı açtı: "${title}"`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      return;
+    }
+
+    // 📢 TEK YÖNLÜ KANALA ANONS VEYA CANLI SESLİ ALTYAZI GÖNDERME (Sadece Kanal Sahibi)
+    if (event === 'send_channel_broadcast') {
+      const channelId = String(data?.channelId || '');
+      const ch = this.channels.get(channelId);
+      if (!ch || ch.ownerClientId !== user.clientId) return;
+
+      const text = String(data?.text || '')
+        .trim()
+        .slice(0, 1000);
+      if (!text) return;
+
+      const bMsg = {
+        id: `bmsg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        text,
+        isLiveVoice: Boolean(data?.isLiveVoice),
+        timestamp: new Date().toISOString(),
+      };
+
+      ch.messages.push(bMsg);
+      if (ch.messages.length > 50) ch.messages.shift();
+
+      this.broadcastNearbyChannelsToAll();
+      return;
+    }
+
+    // 📢 TEK YÖNLÜ KANALA ALKIŞ / TEPKİ GÖNDERME (Dinleyiciler)
+    if (event === 'react_channel') {
+      const channelId = String(data?.channelId || '');
+      const emoji = String(data?.emoji || '');
+      const ch = this.channels.get(channelId);
+      if (!ch) return;
+      if (!['👏', '🔥', '❤️', '👍'].includes(emoji)) return;
+
+      ch.reactions[emoji] = (ch.reactions[emoji] || 0) + 1;
+      this.broadcastNearbyChannelsToAll();
+      return;
+    }
+
+    // 📢 TEK YÖNLÜ KANALI KAPATMA (Sadece Kanal Sahibi)
+    if (event === 'close_channel') {
+      const channelId = String(data?.channelId || '');
+      const ch = this.channels.get(channelId);
+      if (!ch || ch.ownerClientId !== user.clientId) return;
+
+      this.channels.delete(channelId);
+      this.broadcastNearbyChannelsToAll();
       return;
     }
 
@@ -520,6 +684,7 @@ export class MitemasukaHub {
           status: 'ok',
           activeUsers: this.users.size,
           activeRooms: this.rooms.size,
+          activeChannels: this.channels.size,
         }),
         {
           headers: {
