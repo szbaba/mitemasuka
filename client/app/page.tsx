@@ -1357,6 +1357,7 @@ export default function MitemasukaPage() {
 
           <input
             type="text"
+            enterKeyHint="send"
             value={inputText}
             onChange={handleInputChange}
             disabled={!effectiveCoords || !isConnected || isBanned}
@@ -1364,12 +1365,12 @@ export default function MitemasukaPage() {
               isBanned
                 ? 'Çoklu şikayet nedeniyle susturuldunuz.'
                 : whisperTarget
-                ? `${whisperTarget.username} kişisine özel fısıltı yazın...`
+                ? `${whisperTarget.username} kişisine özel fısıltı...`
                 : effectiveCoords
                 ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} odasına mesaj yazın...`
                 : 'Önce konum izni verin...'
             }
-            className="flex-1 bg-[#2a3942] text-[#e9edef] placeholder-[#8696a0] text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#00a884]"
+            className="flex-1 min-w-0 bg-[#2a3942] text-[#e9edef] placeholder-[#8696a0] text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#00a884]"
           />
 
           <button
