@@ -1324,37 +1324,10 @@ export default function MitemasukaPage() {
         </div>
       )}
 
-      {/* ALT MESAJ YAZMA ALANI */}
-      <footer className="bg-[#202c33] px-3 py-2.5 border-t border-[#2a3942] shrink-0">
+      {/* ALT MESAJ YAZMA ALANI (2 SATIRLI TASARIM) */}
+      <footer className="bg-[#202c33] px-3 pt-2.5 pb-2 border-t border-[#2a3942] shrink-0 space-y-2">
+        {/* 1. Satır: Mesaj Yazma Kutusu ve Gönder Butonu */}
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setPaywallReason(null);
-              setShowPlusModal(true);
-            }}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-xl border shrink-0 transition ${
-              isPlus
-                ? 'bg-amber-500/15 border-amber-400/40 text-amber-300 font-semibold'
-                : remainingQuota <= 3
-                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse'
-                : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
-            }`}
-            title="Günlük Ücretsiz Mesaj Hakkı"
-          >
-            {isPlus ? (
-              <>
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Sınırsız</span>
-              </>
-            ) : (
-              <span>
-                Hak: <strong className="text-white">{remainingQuota}</strong>/
-                {dailyLimit}
-              </span>
-            )}
-          </button>
-
           <input
             type="text"
             enterKeyHint="send"
@@ -1370,7 +1343,7 @@ export default function MitemasukaPage() {
                 ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} odasına mesaj yazın...`
                 : 'Önce konum izni verin...'
             }
-            className="flex-1 min-w-0 bg-[#2a3942] text-[#e9edef] placeholder-[#8696a0] text-sm rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#00a884]"
+            className="flex-1 min-w-0 bg-[#2a3942] text-[#e9edef] placeholder-[#8696a0] text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#00a884]"
           />
 
           <button
@@ -1383,6 +1356,48 @@ export default function MitemasukaPage() {
             <Send className="w-5 h-5 translate-x-[1px]" />
           </button>
         </form>
+
+        {/* 2. Satır: Günlük Hak Göstergesi ve Uygulama Mesajı */}
+        <div className="flex items-center justify-between px-1 text-[11px] text-[#8696a0]">
+          <button
+            type="button"
+            onClick={() => {
+              setPaywallReason(null);
+              setShowPlusModal(true);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border transition ${
+              isPlus
+                ? 'bg-amber-500/15 border-amber-400/40 text-amber-300 font-semibold'
+                : remainingQuota <= 3
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse'
+                : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
+            }`}
+          >
+            {isPlus ? (
+              <>
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>Mitemasuka Plus • Sınırsız</span>
+              </>
+            ) : (
+              <>
+                <span>
+                  Hak: <strong className="text-white">{remainingQuota}</strong>/
+                  {dailyLimit}
+                </span>
+                <span className="text-amber-400 font-medium">• Sınırsız ⚡</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowStoryModal(true)}
+            className="hover:text-[#00a884] transition truncate ml-2"
+          >
+            <span className="text-[#00a884] font-medium">見てますか?</span> • Beni
+            görüyor musun?
+          </button>
+        </div>
       </footer>
 
       {/* MODAL 0: 📖 MITEMASUKA NEDİR? */}
