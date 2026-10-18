@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
 import {
   Radar,
   Send,
@@ -29,6 +28,11 @@ import {
   Info,
   Globe,
 } from 'lucide-react';
+
+interface WsClient {
+  emit: (event: string, data?: unknown) => void;
+  close: () => void;
+}
 
 interface RoomUser {
   id: string;
@@ -122,7 +126,7 @@ function playBeepSound() {
 }
 
 export default function MitemasukaPage() {
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [socket, setSocket] = useState<WsClient | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   // Kullanıcının kalıcı kimliği ve Plus / Kota durumu
@@ -188,6 +192,7 @@ export default function MitemasukaPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const soundEnabledRef = useRef<boolean>(true);
+  const myIdRef = useRef<string>('');
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -230,160 +235,139 @@ export default function MitemasukaPage() {
     }
     setMyClientId(storedClientId);
 
-    const backendUrl =
-      process.env.NEXT_PUBLIC_SOCKET_URL ||
-      (typeof window !== 'undefined' &&
-      window.location.hostname !== 'localhost' &&
-      window.location.hostname !== '127.0.0.1'
-        ? 'https://ws.mitemasuka.com'
-        : 'http://localhost:4000');
+    const wsBaseUrl =
+      process.env.NEXT_PUBLIC_WS_URL || 'wss://ws.mitemasuka.com';
 
-    const newSocket = io(backendUrl, {
-      transports: ['websocket', 'polling'],
-      auth: { clientId: storedClientId },
-    });
+    let ws: WebSocket | null = null;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+    let isUnmounted = false;
 
-    setSocket(newSocket);
+    const connectWebSocket = () => {
+      if (isUnmounted) return;
+      ws = new WebSocket(
+        `${wsBaseUrl}?clientId=${encodeURIComponent(storedClientId)}`
+      );
 
-    newSocket.on('connect', () => setIsConnected(true));
-    newSocket.on('disconnect', () => setIsConnected(false));
-
-    newSocket.on(
-      'identity',
-      (data: {
-        id: string;
-        clientId: string;
-        username: string;
-        color: string;
-        isPlus: boolean;
-        ghostMode: boolean;
-        dailyLimit: number;
-        remainingQuota: number;
-        isBanned: boolean;
-      }) => {
-        setMyId(data.id);
-        setMyUsername(data.username);
-        setMyColor(data.color);
-        setIsPlus(Boolean(data.isPlus));
-        setGhostMode(Boolean(data.ghostMode));
-        if (typeof data.dailyLimit === 'number') setDailyLimit(data.dailyLimit);
-        if (typeof data.remainingQuota === 'number')
-          setRemainingQuota(data.remainingQuota);
-        setIsBanned(Boolean(data.isBanned));
-      }
-    );
-
-    newSocket.on(
-      'joined_room',
-      (data: {
-        roomId: string;
-        radius: number;
-        username: string;
-        history?: ChatItem[];
-      }) => {
-        setRoomId(data.roomId);
-        setSelectedRadius(data.radius);
-        if (Array.isArray(data.history) && data.history.length > 0) {
-          setMessages(
-            data.history.map((m) => ({
-              ...m,
-              kind: 'chat',
-            }))
-          );
-        }
-      }
-    );
-
-    newSocket.on(
-      'room_users',
-      (data: { roomId: string; radius: number; users: RoomUser[] }) => {
-        setRoomUsers(data.users || []);
-      }
-    );
-
-    newSocket.on(
-      'paywall_trigger',
-      (data: { reason: string; message: string }) => {
-        setPaywallReason(data.message);
-        setShowPlusModal(true);
-      }
-    );
-
-    newSocket.on(
-      'system_message',
-      (sysMsg: {
-        id: string;
-        type: 'join' | 'leave' | 'info';
-        text: string;
-        timestamp: string;
-      }) => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: sysMsg.id,
-            kind: 'system',
-            systemType: sysMsg.type,
-            text: sysMsg.text,
-            timestamp: sysMsg.timestamp,
-          },
-        ]);
-      }
-    );
-
-    newSocket.on('chat_message', (chatMsg: ChatItem) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === chatMsg.id)) return prev;
-        return [
-          ...prev,
-          {
-            ...chatMsg,
-            kind: 'chat',
-          },
-        ];
-      });
-      if (soundEnabledRef.current && chatMsg.senderId !== newSocket.id) {
-        playBeepSound();
-      }
-    });
-
-    newSocket.on(
-      'message_reaction',
-      (data: { messageId: string; emoji: string; username: string }) => {
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.id !== data.messageId) return m;
-            const currentReactions = { ...(m.reactions || {}) };
-            const list = [...(currentReactions[data.emoji] || [])];
-            const idx = list.indexOf(data.username);
-            if (idx >= 0) {
-              list.splice(idx, 1);
-            } else {
-              list.push(data.username);
-            }
-            currentReactions[data.emoji] = list;
-            return { ...m, reactions: currentReactions };
-          })
-        );
-      }
-    );
-
-    newSocket.on(
-      'user_typing',
-      (data: { userId: string; username: string; isTyping: boolean }) => {
-        setTypingUsers((prev) => {
-          const updated = { ...prev };
-          if (data.isTyping) {
-            updated[data.userId] = data.username;
-          } else {
-            delete updated[data.userId];
+      const clientWrapper: WsClient = {
+        emit: (event: string, data?: unknown) => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event, data }));
           }
-          return updated;
-        });
-      }
-    );
+        },
+        close: () => {
+          if (ws) ws.close();
+        },
+      };
+
+      ws.onopen = () => {
+        if (isUnmounted) return;
+        setSocket(clientWrapper);
+        setIsConnected(true);
+      };
+
+      ws.onclose = () => {
+        if (isUnmounted) return;
+        setIsConnected(false);
+        reconnectTimer = setTimeout(connectWebSocket, 2000);
+      };
+
+      ws.onerror = () => {
+        if (ws) ws.close();
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const payload = JSON.parse(String(evt.data));
+          const { event, data } = payload || {};
+
+          if (event === 'identity') {
+            myIdRef.current = data.id;
+            setMyId(data.id);
+            setMyUsername(data.username);
+            setMyColor(data.color);
+            setIsPlus(Boolean(data.isPlus));
+            setGhostMode(Boolean(data.ghostMode));
+            if (typeof data.dailyLimit === 'number')
+              setDailyLimit(data.dailyLimit);
+            if (typeof data.remainingQuota === 'number')
+              setRemainingQuota(data.remainingQuota);
+            setIsBanned(Boolean(data.isBanned));
+          } else if (event === 'joined_room') {
+            setRoomId(data.roomId);
+            setSelectedRadius(data.radius);
+            if (Array.isArray(data.history) && data.history.length > 0) {
+              setMessages(
+                data.history.map((m: ChatItem) => ({
+                  ...m,
+                  kind: 'chat',
+                }))
+              );
+            }
+          } else if (event === 'room_users') {
+            setRoomUsers(data.users || []);
+          } else if (event === 'paywall_trigger') {
+            setPaywallReason(data.message);
+            setShowPlusModal(true);
+          } else if (event === 'system_message') {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: data.id,
+                kind: 'system',
+                systemType: data.type,
+                text: data.text,
+                timestamp: data.timestamp,
+              },
+            ]);
+          } else if (event === 'chat_message') {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === data.id)) return prev;
+              return [
+                ...prev,
+                {
+                  ...data,
+                  kind: 'chat',
+                },
+              ];
+            });
+            if (
+              soundEnabledRef.current &&
+              data.senderId !== myIdRef.current &&
+              data.senderClientId !== storedClientId
+            ) {
+              playBeepSound();
+            }
+          } else if (event === 'message_reaction') {
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== data.messageId) return m;
+                const currentReactions = { ...(m.reactions || {}) };
+                const list = [...(currentReactions[data.emoji] || [])];
+                const idx = list.indexOf(data.username);
+                if (idx >= 0) list.splice(idx, 1);
+                else list.push(data.username);
+                currentReactions[data.emoji] = list;
+                return { ...m, reactions: currentReactions };
+              })
+            );
+          } else if (event === 'user_typing') {
+            setTypingUsers((prev) => {
+              const updated = { ...prev };
+              if (data.isTyping) updated[data.userId] = data.username;
+              else delete updated[data.userId];
+              return updated;
+            });
+          }
+        } catch {}
+      };
+    };
+
+    connectWebSocket();
 
     return () => {
-      newSocket.disconnect();
+      isUnmounted = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
     };
   }, []);
 

@@ -1,0 +1,17 @@
+name = "mitemasuka-ws"
+main = "index.js"
+compatibility_date = "2024-10-01"
+
+# Cloudflare üzerinden ws.mitemasuka.com adresini otomatik bağlar
+routes = [
+  { pattern = "ws.mitemasuka.com", custom_domain = true }
+]
+
+[durable_objects]
+bindings = [
+  { name = "MITEMASUKA_HUB", class_name = "MitemasukaHub" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MitemasukaHub"]
