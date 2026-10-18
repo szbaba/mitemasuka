@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Radar,
   Send,
@@ -27,6 +27,7 @@ import {
   Copy,
   Info,
   Globe,
+  RefreshCw,
 } from 'lucide-react';
 
 interface WsClient {
@@ -146,6 +147,7 @@ export default function MitemasukaPage() {
     lng: number;
   } | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [isRequestingGeo, setIsRequestingGeo] = useState<boolean>(false);
   const [selectedRadius, setSelectedRadius] = useState<number>(100);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
@@ -193,6 +195,7 @@ export default function MitemasukaPage() {
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const soundEnabledRef = useRef<boolean>(true);
   const myIdRef = useRef<string>('');
+  const watchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -217,6 +220,7 @@ export default function MitemasukaPage() {
     } catch {}
   }, []);
 
+  // WebSocket Bağlantısı (Ekran uyandığında veya ağ değiştiğinde anında yeniden bağlanır)
   useEffect(() => {
     let storedClientId = '';
     try {
@@ -244,6 +248,14 @@ export default function MitemasukaPage() {
 
     const connectWebSocket = () => {
       if (isUnmounted) return;
+      if (
+        ws &&
+        (ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING)
+      ) {
+        return;
+      }
+
       ws = new WebSocket(
         `${wsBaseUrl}?clientId=${encodeURIComponent(storedClientId)}`
       );
@@ -268,7 +280,8 @@ export default function MitemasukaPage() {
       ws.onclose = () => {
         if (isUnmounted) return;
         setIsConnected(false);
-        reconnectTimer = setTimeout(connectWebSocket, 2000);
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connectWebSocket, 1500);
       };
 
       ws.onerror = () => {
@@ -364,21 +377,36 @@ export default function MitemasukaPage() {
 
     connectWebSocket();
 
+    const handleVisibilityOrOnline = () => {
+      if (document.visibilityState === 'visible') {
+        connectWebSocket();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrOnline);
+    window.addEventListener('online', handleVisibilityOrOnline);
+
     return () => {
       isUnmounted = true;
+      window.removeEventListener('visibilitychange', handleVisibilityOrOnline);
+      window.removeEventListener('online', handleVisibilityOrOnline);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) ws.close();
     };
   }, []);
 
-  useEffect(() => {
+  // Konum alma ve izleme fonksiyonu (Hem otomatik hem de kullanıcı butona dokunduğunda çalışır)
+  const startLocationTracking = useCallback(() => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {
       setGeoError('Tarayıcınız konum özelliğini desteklemiyor.');
       return;
     }
 
-    const watchId = navigator.geolocation.watchPosition(
+    setIsRequestingGeo(true);
+
+    navigator.geolocation.getCurrentPosition(
       (position) => {
+        setIsRequestingGeo(false);
         setGeoError(null);
         setBaseCoords({
           lat: position.coords.latitude,
@@ -386,12 +414,14 @@ export default function MitemasukaPage() {
         });
       },
       (error) => {
-        let msg = 'Konum alınamadı. Lütfen tarayıcıdan konum izni verin.';
+        setIsRequestingGeo(false);
         if (error.code === error.PERMISSION_DENIED) {
-          msg =
-            'Konum izni reddedildi. Yakınınızdaki kişilerle eşleşmek için adres çubuğundan konum iznini açın veya aşağıdaki Test Konumu butonunu kullanın.';
+          setGeoError('PERMISSION_DENIED');
+        } else {
+          setGeoError(
+            'Konum sinyali alınamadı. Lütfen telefonunuzda Konum Servislerinin açık olduğundan emin olup tekrar deneyin.'
+          );
         }
-        setGeoError(msg);
       },
       {
         enableHighAccuracy: true,
@@ -400,10 +430,36 @@ export default function MitemasukaPage() {
       }
     );
 
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-    };
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        setIsRequestingGeo(false);
+        setGeoError(null);
+        setBaseCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {},
+      {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 15000,
+      }
+    );
   }, []);
+
+  useEffect(() => {
+    startLocationTracking();
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, [startLocationTracking]);
 
   useEffect(() => {
     if (!socket || !isConnected || !effectiveCoords) return;
@@ -522,71 +578,68 @@ export default function MitemasukaPage() {
   };
 
   const currentUrl =
-    typeof window !== 'undefined' &&
-    window.location.hostname !== 'localhost'
+    typeof window !== 'undefined' && window.location.hostname !== 'localhost'
       ? window.location.origin
       : 'https://mitemasuka.com';
   const activeTypingNames = Object.values(typingUsers);
 
   return (
     <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-[#0b141a] text-[#e9edef] border-x border-[#222d34] shadow-2xl overflow-hidden">
-      {/* ÜST BAR (Mitemasuka • 見てますか?) */}
-      <header className="bg-[#202c33] px-3 sm:px-4 py-2.5 flex items-center justify-between border-b border-[#2a3942] z-20 shrink-0 gap-2">
-        <div
-          className="flex items-center gap-2.5 cursor-pointer select-none min-w-0"
-          onClick={() => setShowMembersDrawer((prev) => !prev)}
-        >
-          <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-[#00a884]/20 text-[#00a884] shrink-0">
-            <Radar className="w-6 h-6 animate-pulse" />
-            <span
-              className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#202c33] ${
-                isConnected ? 'bg-[#00a884]' : 'bg-red-500'
-              }`}
-            />
-          </div>
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h1 className="font-bold text-sm sm:text-base leading-tight truncate tracking-tight">
-                Mitemasuka
-              </h1>
-              <span className="text-[11px] text-[#00a884] font-medium px-1.5 py-0.5 rounded bg-[#00a884]/10 border border-[#00a884]/30 hidden sm:inline">
-                見てますか?
-              </span>
-              {showMembersDrawer ? (
-                <ChevronUp className="w-4 h-4 text-[#8696a0] shrink-0" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-[#8696a0] shrink-0" />
-              )}
-            </div>
-            <p className="text-[11px] sm:text-xs text-[#8696a0] flex items-center gap-1.5 truncate">
-              <Users className="w-3.5 h-3.5 text-[#00a884] shrink-0" />
-              <span>
-                {selectedRadius >= 1000
-                  ? `${selectedRadius / 1000}km`
-                  : `${selectedRadius}m`}{' '}
-                • {roomUsers.length} kişi
-              </span>
-              <span>•</span>
+      {/* ÜST BAR (Mobil ve Masaüstünde Asla Üst Üste Binmeyen 2 Katmanlı Tasarım) */}
+      <header className="bg-[#202c33] border-b border-[#2a3942] z-20 shrink-0">
+        {/* 1. Satır: Logo, Oda Bilgisi ve Hamburger Menü */}
+        <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+          <div
+            className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1"
+            onClick={() => setShowMembersDrawer((prev) => !prev)}
+          >
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-[#00a884]/20 text-[#00a884] shrink-0">
+              <Radar className="w-6 h-6 animate-pulse" />
               <span
-                style={{ color: myColor }}
-                className="font-medium truncate flex items-center gap-1"
-              >
-                {myUsername}
-                {isPlus && (
-                  <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40 rounded">
-                    ⚡ PLUS
-                  </span>
-                )}
-                {ghostMode && <span title="Hayalet Mod Aktif">👻</span>}
-              </span>
-            </p>
-          </div>
-        </div>
+                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#202c33] ${
+                  isConnected ? 'bg-[#00a884]' : 'bg-red-500'
+                }`}
+              />
+            </div>
 
-        {/* Sağ Taraf: Menzil Seçici + Hamburger Menü */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className="flex bg-[#111b21] p-0.5 rounded-lg border border-[#2a3942]">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <h1 className="font-bold text-base leading-tight truncate tracking-tight">
+                  Mitemasuka
+                </h1>
+                <span className="text-[11px] text-[#00a884] font-medium px-1.5 py-0.5 rounded bg-[#00a884]/10 border border-[#00a884]/30 shrink-0">
+                  見てますか?
+                </span>
+                {showMembersDrawer ? (
+                  <ChevronUp className="w-4 h-4 text-[#8696a0] shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-[#8696a0] shrink-0" />
+                )}
+              </div>
+              <p className="text-xs text-[#8696a0] flex items-center gap-1.5 truncate mt-0.5">
+                <Users className="w-3.5 h-3.5 text-[#00a884] shrink-0" />
+                <span className="text-[#e9edef] font-medium">
+                  {roomUsers.length} kişi
+                </span>
+                <span>•</span>
+                <span
+                  style={{ color: myColor }}
+                  className="font-medium truncate flex items-center gap-1"
+                >
+                  {myUsername}
+                  {isPlus && (
+                    <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40 rounded">
+                      ⚡ PLUS
+                    </span>
+                  )}
+                  {ghostMode && <span title="Hayalet Mod Aktif">👻</span>}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          {/* Masaüstünde Menzil Seçici Sağda, Mobilde Alt Satırda */}
+          <div className="hidden sm:flex bg-[#111b21] p-0.5 rounded-lg border border-[#2a3942] shrink-0">
             {RADIUS_OPTIONS.map((opt) => {
               const locked = opt.requiresPlus && !isPlus;
               const isSelected = selectedRadius === opt.value;
@@ -594,7 +647,7 @@ export default function MitemasukaPage() {
                 <button
                   key={opt.value}
                   onClick={() => handleSelectRadius(opt)}
-                  className={`px-2 py-1 text-[11px] sm:text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
                     isSelected
                       ? 'bg-[#00a884] text-[#111b21] font-bold shadow'
                       : locked
@@ -611,7 +664,7 @@ export default function MitemasukaPage() {
 
           <button
             onClick={() => setShowHamburgerMenu((prev) => !prev)}
-            className="p-2 rounded-lg bg-[#111b21] border border-[#2a3942] text-[#e9edef] hover:bg-[#2a3942] transition relative"
+            className="p-2 rounded-xl bg-[#111b21] border border-[#2a3942] text-[#e9edef] hover:bg-[#2a3942] transition shrink-0"
             aria-label="Menü"
           >
             {showHamburgerMenu ? (
@@ -620,6 +673,32 @@ export default function MitemasukaPage() {
               <Menu className="w-5 h-5" />
             )}
           </button>
+        </div>
+
+        {/* 2. Satır (Sadece Mobil Ekranlarda): Tam Genişlikte Ferah Menzil Seçici */}
+        <div className="flex sm:hidden px-3 pb-2">
+          <div className="grid grid-cols-4 w-full bg-[#111b21] p-1 rounded-xl border border-[#2a3942] gap-1">
+            {RADIUS_OPTIONS.map((opt) => {
+              const locked = opt.requiresPlus && !isPlus;
+              const isSelected = selectedRadius === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => handleSelectRadius(opt)}
+                  className={`py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 ${
+                    isSelected
+                      ? 'bg-[#00a884] text-[#111b21] font-bold shadow'
+                      : locked
+                      ? 'text-[#8696a0] hover:text-amber-300'
+                      : 'text-[#8696a0] hover:text-white'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  {locked && <Lock className="w-3 h-3 text-amber-400" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </header>
 
@@ -646,7 +725,6 @@ export default function MitemasukaPage() {
           </div>
 
           <div className="py-1">
-            {/* Mitemasuka Nedir? (Marka Hikayesi & Tanıtım) */}
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
@@ -666,7 +744,6 @@ export default function MitemasukaPage() {
               </div>
             </button>
 
-            {/* Yakınındakini Ekle (QR Kod) */}
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
@@ -683,7 +760,6 @@ export default function MitemasukaPage() {
               </div>
             </button>
 
-            {/* Takma Ad Değiştir */}
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
@@ -706,7 +782,6 @@ export default function MitemasukaPage() {
               {!isPlus && <Lock className="w-3.5 h-3.5 text-amber-400" />}
             </button>
 
-            {/* Hayalet Modu */}
             <button
               onClick={() => {
                 if (!isPlus) {
@@ -740,7 +815,6 @@ export default function MitemasukaPage() {
               )}
             </button>
 
-            {/* Bildirim Sesleri */}
             <button
               onClick={() => setSoundEnabled((prev) => !prev)}
               className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
@@ -758,7 +832,6 @@ export default function MitemasukaPage() {
               </span>
             </button>
 
-            {/* Kurallar & Engellenenler */}
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
@@ -909,14 +982,14 @@ export default function MitemasukaPage() {
         </div>
       )}
 
-      {/* KONUM BEKLENİYOR (KARŞILAMA & MARKA HİKAYESİ EKRANI) */}
+      {/* KONUM BEKLENİYOR (KARŞILAMA & iOS KONUM İZNİ REHBERİ EKRANI) */}
       {!effectiveCoords ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-5">
-          <div className="w-20 h-20 rounded-full bg-[#00a884]/15 border border-[#00a884]/40 flex items-center justify-center text-[#00a884] shadow-xl">
-            <MapPin className="w-10 h-10 animate-bounce" />
+        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-[#00a884]/15 border border-[#00a884]/40 flex items-center justify-center text-[#00a884] shadow-xl shrink-0">
+            <MapPin className="w-8 h-8 animate-bounce" />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#202c33] border border-[#2a3942] text-xs text-[#00a884] font-semibold">
               <span>見てますか?</span>
               <span>•</span>
@@ -925,47 +998,84 @@ export default function MitemasukaPage() {
             <h2 className="text-2xl font-extrabold tracking-tight text-white">
               Mitemasuka
             </h2>
-            <p className="text-sm text-[#8696a0] max-w-md">
-              {geoError ||
-                'Şu an bulunduğun kafede, kampüste, etkinlikte veya sokakta tam 100 metre çapındaki gerçek insanlarla aynı odaya bağlanmak için konum iznini onayla.'}
+            <p className="text-xs sm:text-sm text-[#8696a0] max-w-md">
+              100 metre çevrendeki gerçek insanlarla aynı odaya bağlanmak için
+              aşağıdaki butona dokunarak konum izni verin.
             </p>
           </div>
 
-          {geoError && (
-            <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3 py-2 rounded-lg max-w-md">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>
-                Konum izni veremediyseniz hemen test etmek için aşağıdaki butonu
-                kullanabilirsiniz.
-              </span>
+          {/* ANA KONUM İZNİ İSTEME BUTONU (Kullanıcı dokunuşu ile tetikler) */}
+          <button
+            onClick={startLocationTracking}
+            disabled={isRequestingGeo}
+            className="w-full max-w-xs py-3.5 px-5 bg-[#00a884] hover:bg-[#06cf9c] active:scale-[0.99] text-[#111b21] font-extrabold rounded-2xl text-sm transition shadow-lg flex items-center justify-center gap-2"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${isRequestingGeo ? 'animate-spin' : ''}`}
+            />
+            <span>
+              {isRequestingGeo
+                ? 'Konum Alınıyor...'
+                : '📍 Konum İzni Ver ve Odaya Gir'}
+            </span>
+          </button>
+
+          {/* EĞER iPHONE / TARAYICI KONUM İZNİNİ OTOMATİK REDDEDİYORSA AÇIK ADIMLAR */}
+          {geoError === 'PERMISSION_DENIED' && (
+            <div className="w-full max-w-md bg-[#182229] border border-amber-500/40 rounded-2xl p-4 text-left space-y-2.5 text-xs shadow-lg">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Telefonunuz Tarayıcının Konum İznini Kapatmış</span>
+              </div>
+              <p className="text-[#8696a0] leading-relaxed">
+                iPhone&apos;da daha önce tarayıcı konum izni{' '}
+                <strong>&ldquo;Asla&rdquo;</strong> olarak seçildiyse telefon
+                size pencere çıkarmadan otomatik reddeder. Açmak için:
+              </p>
+              <ol className="list-decimal list-inside space-y-1.5 text-[#e9edef] bg-[#111b21] p-3 rounded-xl border border-[#2a3942]">
+                <li>
+                  iPhone <strong>Ayarlar</strong> uygulamasına girin,
+                </li>
+                <li>
+                  <strong>Gizlilik ve Güvenlik</strong> &rarr;{' '}
+                  <strong>Konum Servisleri</strong>&apos;ne dokunun,
+                </li>
+                <li>
+                  Aşağıdan <strong>Safari Web Siteleri</strong> (veya{' '}
+                  <strong>Chrome</strong>) satırına girip{' '}
+                  <strong className="text-[#00a884]">
+                    &ldquo;Uygulamayı Kullanırken&rdquo;
+                  </strong>{' '}
+                  seçin.
+                </li>
+                <li>
+                  Safari&apos;deyseniz adres çubuğunun solundaki{' '}
+                  <strong>aA / sol ikon &rarr; Web Sitesi Ayarları &rarr; Konum &rarr; İzin Ver</strong>{' '}
+                  yapıp yukarıdaki yeşil butona tekrar basın.
+                </li>
+              </ol>
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <button
-              onClick={() => {
-                setBaseCoords({ lat: 41.0082, lng: 28.9784 });
-                setGeoError(null);
-              }}
-              className="px-5 py-2.5 bg-[#00a884] hover:bg-[#06cf9c] text-[#111b21] font-bold rounded-xl text-sm transition shadow-lg"
-            >
-              🧪 Test Konumu ile Hemen Giriş Yap
-            </button>
+          {geoError && geoError !== 'PERMISSION_DENIED' && (
+            <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3.5 py-2.5 rounded-xl max-w-md">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{geoError}</span>
+            </div>
+          )}
 
-            <button
-              onClick={() => setShowStoryModal(true)}
-              className="px-4 py-2.5 bg-[#202c33] hover:bg-[#2a3942] text-[#e9edef] border border-[#2a3942] font-medium rounded-xl text-sm transition"
-            >
-              📖 Mitemasuka Nedir?
-            </button>
-          </div>
+          <button
+            onClick={() => setShowStoryModal(true)}
+            className="px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] text-[#e9edef] border border-[#2a3942] font-medium rounded-xl text-xs transition"
+          >
+            📖 Mitemasuka Nedir? (見てますか?)
+          </button>
         </div>
       ) : (
         <main
           onClick={() => showHamburgerMenu && setShowHamburgerMenu(false)}
           className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 bg-[#0b141a] bg-[radial-gradient(#1f2c34_1px,transparent_1px)] [background-size:20px_20px]"
         >
-          {/* Üst Bilgi Bandı */}
           <div className="flex justify-center my-2">
             <div className="bg-[#182229] border border-[#2a3942] text-[#8696a0] text-xs px-3.5 py-2 rounded-xl text-center max-w-md shadow">
               <span className="text-[#00a884] font-semibold">
@@ -1274,7 +1384,7 @@ export default function MitemasukaPage() {
         </form>
       </footer>
 
-      {/* MODAL 0: 📖 MITEMASUKA NEDİR? (MARKA HİKAYESİ & TANITIM METİNLERİ - TR / EN / JP) */}
+      {/* MODAL 0: 📖 MITEMASUKA NEDİR? */}
       {showStoryModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
@@ -1285,7 +1395,6 @@ export default function MitemasukaPage() {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Dil Seçici (TR / EN / JP) */}
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-[#00a884]" />
               {(['tr', 'en', 'jp'] as const).map((lng) => (
@@ -1323,12 +1432,13 @@ export default function MitemasukaPage() {
                     ✨ İsmin Doğuş Hikayesi:
                   </div>
                   <p className="text-[#8696a0]">
-                    Japoncada <strong>&ldquo;Mitemasu ka?&rdquo; (見てますか?)</strong>,{' '}
+                    Japoncada{' '}
+                    <strong>&ldquo;Mitemasu ka?&rdquo; (見てますか?)</strong>,{' '}
                     <em>&ldquo;Beni görüyor musun? / Etrafına bakıyor musun?&rdquo;</em>{' '}
                     anlamına gelir. Uygulamamız geliştirilirken Türkçe{' '}
                     <em>&ldquo;MiniTemas&rdquo;</em> kelimesinin sesli yapay zeka
-                    tarafından Japonca <strong>&ldquo;見てますか?&rdquo;</strong> olarak
-                    duyulmasıyla doğdu.
+                    tarafından Japonca <strong>&ldquo;見てますか?&rdquo;</strong>{' '}
+                    olarak duyulmasıyla doğdu.
                   </p>
                 </div>
                 <div className="space-y-1.5 text-xs text-[#e9edef]/90">
@@ -1395,7 +1505,8 @@ export default function MitemasukaPage() {
                 </h3>
                 <p className="text-[#e9edef]/90 text-xs sm:text-sm">
                   カフェ、キャンパス、イベント会場で、すぐ隣にいる人と今すぐつながる。
-                  <strong>Mitemasuka (見てますか?)</strong> は、半径100メートル以内にいる人たちだけをリアルタイムで同じチャットルームにつなぐハイパーローカルPWAです。
+                  <strong>Mitemasuka (見てますか?)</strong>{' '}
+                  は、半径100メートル以内にいる人たちだけをリアルタイムで同じチャットルームにつなぐハイパーローカルPWAです。
                 </p>
               </div>
             )}
