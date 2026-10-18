@@ -108,11 +108,19 @@ const RADIUS_OPTIONS = [
 
 const CHANNEL_PLANS = [
   {
+    id: 'class_100m',
+    radius: 100,
+    title: 'Sınıf / Tur Rehberi',
+    rangeLabel: '100 m Çap',
+    duration: '2 Saatlik Yayın',
+    price: '99 ₺',
+  },
+  {
     id: 'guide_500m',
     radius: 500,
-    title: 'Rehber / Seminer',
+    title: 'Seminer / Kampüs',
     rangeLabel: '500 m Çap',
-    duration: '2 Saatlik Yayın',
+    duration: '6 Saatlik Yayın',
     price: '199 ₺',
   },
   {
@@ -1679,7 +1687,7 @@ export default function MitemasukaPage() {
               <label className="text-xs font-semibold text-[#8696a0]">
                 Yayın Menzili & Paketi Seçin
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 {CHANNEL_PLANS.map((pkg) => (
                   <button
                     type="button"

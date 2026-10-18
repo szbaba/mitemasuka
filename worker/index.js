@@ -365,11 +365,11 @@ export class MitemasukaHub {
         .slice(0, 60);
       if (!title) return;
 
-      const allowedRadii = [500, 1000, 5000];
+      const allowedRadii = [100, 500, 1000, 5000];
       const radius = allowedRadii.includes(Number(data?.radius))
         ? Number(data.radius)
-        : 1000;
-      const plan = String(data?.plan || 'event_1km');
+        : 100;
+      const plan = String(data?.plan || 'class_100m');
 
       const channelId = `ch_${Date.now()}_${Math.random()
         .toString(36)
