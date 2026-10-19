@@ -381,6 +381,24 @@ export default function MitemasukaPage() {
     };
   }, [baseCoords, simOffsetMeters]);
 
+  const regionKey = React.useMemo(() => {
+    if (baseCoords) {
+      const reg = `reg_${Math.round(baseCoords.lat * 2)}_${Math.round(
+        baseCoords.lng * 2
+      )}`;
+      try {
+        localStorage.setItem('mitemasuka_region', reg);
+      } catch {}
+      return reg;
+    }
+    try {
+      if (typeof window !== 'undefined') {
+        return localStorage.getItem('mitemasuka_region') || 'global-hub-v1';
+      }
+    } catch {}
+    return 'global-hub-v1';
+  }, [baseCoords]);
+
   const activeChannel = React.useMemo(
     () => nearbyChannels.find((c) => c.id === activeChannelId) || null,
     [nearbyChannels, activeChannelId]
@@ -440,7 +458,9 @@ export default function MitemasukaPage() {
       }
 
       ws = new WebSocket(
-        `${wsBaseUrl}?clientId=${encodeURIComponent(storedClientId)}`
+        `${wsBaseUrl}?clientId=${encodeURIComponent(
+          storedClientId
+        )}&region=${encodeURIComponent(regionKey)}`
       );
 
       const clientWrapper: WsClient = {
@@ -602,7 +622,7 @@ export default function MitemasukaPage() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) ws.close();
     };
-  }, []);
+  }, [regionKey]);
 
   const startLocationTracking = useCallback(() => {
     if (typeof window === 'undefined' || !('geolocation' in navigator)) {

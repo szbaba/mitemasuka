@@ -760,7 +760,13 @@ export class MitemasukaHub {
 
 export default {
   async fetch(request, env) {
-    const id = env.MITEMASUKA_HUB.idFromName('global-hub-v1');
+    const url = new URL(request.url);
+    const rawRegion = url.searchParams.get('region') || 'global-hub-v1';
+    const safeRegion =
+      String(rawRegion)
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 40) || 'global-hub-v1';
+    const id = env.MITEMASUKA_HUB.idFromName(safeRegion);
     const stub = env.MITEMASUKA_HUB.get(id);
     return stub.fetch(request);
   },
