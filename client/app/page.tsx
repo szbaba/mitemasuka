@@ -168,24 +168,87 @@ function getDistanceMeters(
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function playBeepSound() {
+function playTinSound(type: 'room' | 'whisper' | 'presence' = 'room') {
   try {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext })
         .webkitAudioContext;
     const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(660, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08);
-    gain.gain.setValueAtTime(0.06, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.12);
+
+    if (type === 'whisper') {
+      // Özel Fısıltı için zarif çift "Tin-Tin" kristal çan sesi
+      [0, 0.14].forEach((offset, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        const freq = idx === 0 ? 987.77 : 1318.51; // B5 -> E6
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
+        gain.gain.setValueAtTime(0.09, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(
+          0.001,
+          ctx.currentTime + offset + 0.22
+        );
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + 0.22);
+      });
+    } else if (type === 'presence') {
+      // Odaya Giriş / Çıkış için yumuşak radar tonu
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.12); // E5
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.18);
+    } else {
+      // Genel Oda Mesajı için berrak "Tin" (Kristal Ding) sesi
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1046.5, ctx.currentTime); // C6 kristal çan
+      osc.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.06);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+    }
+  } catch {}
+}
+
+function requestNotifPermissionIfNeeded() {
+  try {
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'default'
+    ) {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch {}
+}
+
+function triggerBrowserNotification(title: string, body: string) {
+  try {
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted' &&
+      document.visibilityState !== 'visible'
+    ) {
+      new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+      });
+    }
   } catch {}
 }
 
@@ -247,10 +310,13 @@ export default function MitemasukaPage() {
   const [showRulesModal, setShowRulesModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Yerel Simülatör & Ses Ayarı
+  // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları
   const [simOffsetMeters, setSimOffsetMeters] = useState<number>(0);
   const [showSimBar, setShowSimBar] = useState<boolean>(false);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [roomNotifEnabled, setRoomNotifEnabled] = useState<boolean>(true);
+  const [whisperNotifEnabled, setWhisperNotifEnabled] = useState<boolean>(true);
+  const [presenceNotifEnabled, setPresenceNotifEnabled] =
+    useState<boolean>(false);
 
   // Mesajlaşma, Yanıtlama, Özel Fısıltı ve Engelleme
   const [messages, setMessages] = useState<ChatItem[]>([]);
@@ -271,15 +337,40 @@ export default function MitemasukaPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const channelEndRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const soundEnabledRef = useRef<boolean>(true);
+  const roomNotifRef = useRef<boolean>(true);
+  const whisperNotifRef = useRef<boolean>(true);
+  const presenceNotifRef = useRef<boolean>(false);
   const myIdRef = useRef<string>('');
   const watchIdRef = useRef<number | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    soundEnabledRef.current = soundEnabled;
-  }, [soundEnabled]);
+    roomNotifRef.current = roomNotifEnabled;
+    try {
+      localStorage.setItem('mitemasuka_notif_room', String(roomNotifEnabled));
+    } catch {}
+  }, [roomNotifEnabled]);
+
+  useEffect(() => {
+    whisperNotifRef.current = whisperNotifEnabled;
+    try {
+      localStorage.setItem(
+        'mitemasuka_notif_whisper',
+        String(whisperNotifEnabled)
+      );
+    } catch {}
+  }, [whisperNotifEnabled]);
+
+  useEffect(() => {
+    presenceNotifRef.current = presenceNotifEnabled;
+    try {
+      localStorage.setItem(
+        'mitemasuka_notif_presence',
+        String(presenceNotifEnabled)
+      );
+    } catch {}
+  }, [presenceNotifEnabled]);
 
   const effectiveCoords = React.useMemo(() => {
     if (!baseCoords) return null;
@@ -302,6 +393,14 @@ export default function MitemasukaPage() {
     try {
       const savedBlocks = localStorage.getItem('mitemasuka_blocked');
       if (savedBlocks) setBlockedClientIds(JSON.parse(savedBlocks));
+      const savedRoom = localStorage.getItem('mitemasuka_notif_room');
+      if (savedRoom !== null) setRoomNotifEnabled(savedRoom === 'true');
+      const savedWhisper = localStorage.getItem('mitemasuka_notif_whisper');
+      if (savedWhisper !== null)
+        setWhisperNotifEnabled(savedWhisper === 'true');
+      const savedPresence = localStorage.getItem('mitemasuka_notif_presence');
+      if (savedPresence !== null)
+        setPresenceNotifEnabled(savedPresence === 'true');
     } catch {}
   }, []);
 
@@ -420,6 +519,16 @@ export default function MitemasukaPage() {
                 timestamp: data.timestamp,
               },
             ]);
+            if (
+              (data.type === 'join' || data.type === 'leave') &&
+              presenceNotifRef.current
+            ) {
+              playTinSound('presence');
+              triggerBrowserNotification(
+                '🚪 Mitemasuka Radar',
+                String(data.text || '')
+              );
+            }
           } else if (event === 'chat_message') {
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.id)) return prev;
@@ -432,11 +541,23 @@ export default function MitemasukaPage() {
               ];
             });
             if (
-              soundEnabledRef.current &&
               data.senderId !== myIdRef.current &&
               data.senderClientId !== storedClientId
             ) {
-              playBeepSound();
+              const isWhisper = Boolean(data.whisperToId);
+              if (isWhisper && whisperNotifRef.current) {
+                playTinSound('whisper');
+                triggerBrowserNotification(
+                  `🔒 ${data.senderName} (Özel Fısıltı)`,
+                  String(data.text || '')
+                );
+              } else if (!isWhisper && roomNotifRef.current) {
+                playTinSound('room');
+                triggerBrowserNotification(
+                  `💬 ${data.senderName}`,
+                  String(data.text || '')
+                );
+              }
             }
           } else if (event === 'message_reaction') {
             setMessages((prev) =>
@@ -1066,20 +1187,102 @@ export default function MitemasukaPage() {
               )}
             </button>
 
+            {/* 1. ODA MESAJ BİLDİRİMİ (Varsayılan: Açık) */}
             <button
-              onClick={() => setSoundEnabled((prev) => !prev)}
+              onClick={() => {
+                setRoomNotifEnabled((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    playTinSound('room');
+                    requestNotifPermissionIfNeeded();
+                  }
+                  return next;
+                });
+              }}
               className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
             >
               <span className="flex items-center gap-3">
-                {soundEnabled ? (
-                  <Volume2 className="w-4 h-4 text-emerald-400" />
+                {roomNotifEnabled ? (
+                  <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
                 ) : (
-                  <VolumeX className="w-4 h-4 text-[#8696a0]" />
+                  <VolumeX className="w-4 h-4 text-[#8696a0] shrink-0" />
                 )}
-                <span>Bildirim Sesleri</span>
+                <span>Oda Mesaj Bildirimi</span>
               </span>
-              <span className="text-xs text-[#8696a0]">
-                {soundEnabled ? 'Açık' : 'Sessiz'}
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  roomNotifEnabled
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-[#111b21] text-[#8696a0]'
+                }`}
+              >
+                {roomNotifEnabled ? 'Açık' : 'Kapalı'}
+              </span>
+            </button>
+
+            {/* 2. ÖZEL FISILTI (DM) BİLDİRİMİ (Varsayılan: Açık) */}
+            <button
+              onClick={() => {
+                setWhisperNotifEnabled((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    playTinSound('whisper');
+                    requestNotifPermissionIfNeeded();
+                  }
+                  return next;
+                });
+              }}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+            >
+              <span className="flex items-center gap-3">
+                {whisperNotifEnabled ? (
+                  <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-[#8696a0] shrink-0" />
+                )}
+                <span>Özel Fısıltı Bildirimi</span>
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  whisperNotifEnabled
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-[#111b21] text-[#8696a0]'
+                }`}
+              >
+                {whisperNotifEnabled ? 'Açık' : 'Kapalı'}
+              </span>
+            </button>
+
+            {/* 3. ODAYA GİRİŞ / ÇIKIŞ UYARISI (Varsayılan: Kapalı) */}
+            <button
+              onClick={() => {
+                setPresenceNotifEnabled((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    playTinSound('presence');
+                    requestNotifPermissionIfNeeded();
+                  }
+                  return next;
+                });
+              }}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+            >
+              <span className="flex items-center gap-3">
+                {presenceNotifEnabled ? (
+                  <Volume2 className="w-4 h-4 text-blue-400 shrink-0" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-[#8696a0] shrink-0" />
+                )}
+                <span>Giriş / Çıkış Uyarısı</span>
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  presenceNotifEnabled
+                    ? 'bg-blue-500/20 text-blue-300'
+                    : 'bg-[#111b21] text-[#8696a0]'
+                }`}
+              >
+                {presenceNotifEnabled ? 'Açık' : 'Kapalı'}
               </span>
             </button>
 
