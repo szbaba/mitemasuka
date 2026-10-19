@@ -940,8 +940,15 @@ export default function MitemasukaPage() {
                 <Sparkles className="w-4 h-4 text-amber-400" />
                 {isPlus ? 'Mitemasuka Plus Aktif' : "Mitemasuka Plus'a Geç"}
               </span>
-              <span className="text-xs bg-amber-400 text-black px-2 py-0.5 rounded-full font-bold">
-                {isPlus ? 'VIP' : 'Yükselt'}
+              <span className="flex flex-col items-end shrink-0">
+                <span className="text-xs bg-amber-400 text-black px-2 py-0.5 rounded-full font-bold">
+                  {isPlus ? 'VIP' : 'Yükselt'}
+                </span>
+                {!isPlus && (
+                  <span className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                    Şimdilik Ücretsiz
+                  </span>
+                )}
               </span>
             </button>
 
@@ -953,12 +960,17 @@ export default function MitemasukaPage() {
               }}
               className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-rose-500/25 to-orange-500/25 border border-rose-400/40 text-rose-200 font-semibold hover:brightness-110 transition"
             >
-              <span className="flex items-center gap-2">
-                <Megaphone className="w-4 h-4 text-rose-400" />
+              <span className="flex items-center gap-2 text-left">
+                <Megaphone className="w-4 h-4 text-rose-400 shrink-0" />
                 <span>Kanal Kur (Tek Yönlü Seslen)</span>
               </span>
-              <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold">
-                PRO
+              <span className="flex flex-col items-end shrink-0">
+                <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold">
+                  PRO
+                </span>
+                <span className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                  Şimdilik Ücretsiz
+                </span>
               </span>
             </button>
           </div>
@@ -1684,9 +1696,14 @@ export default function MitemasukaPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#8696a0]">
-                Yayın Menzili & Paketi Seçin
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#8696a0]">
+                  Yayın Menzili & Paketi Seçin
+                </label>
+                <span className="text-[11px] text-emerald-400 font-semibold">
+                  ✨ Tanıtıma Özel Şimdilik Ücretsiz
+                </span>
+              </div>
               <div className="grid grid-cols-2 gap-2.5">
                 {CHANNEL_PLANS.map((pkg) => (
                   <button
@@ -1702,9 +1719,17 @@ export default function MitemasukaPage() {
                     <span className="text-[10px] font-bold text-rose-300 uppercase">
                       {pkg.rangeLabel}
                     </span>
-                    <span className="text-base font-extrabold text-white my-1">
-                      {pkg.price}
-                    </span>
+                    <div className="my-1 flex flex-col items-center">
+                      <span className="relative inline-block text-sm font-bold text-[#8696a0] line-through decoration-rose-500 decoration-2">
+                        {pkg.price}
+                        <span className="absolute inset-0 flex items-center justify-center text-rose-500 font-black text-base pointer-events-none">
+                          ✕
+                        </span>
+                      </span>
+                      <span className="text-xs font-extrabold text-emerald-400">
+                        Ücretsiz
+                      </span>
+                    </div>
                     <span className="text-[11px] font-medium leading-tight">
                       {pkg.title}
                     </span>
@@ -1733,7 +1758,7 @@ export default function MitemasukaPage() {
               disabled={!channelTitleInput.trim()}
               className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 text-black font-extrabold text-sm hover:brightness-110 transition shadow-lg disabled:opacity-40"
             >
-              📢 Kanalı Hemen Başlat ({selectedChannelPlan.rangeLabel})
+              📢 Kanalı Ücretsiz Başlat ({selectedChannelPlan.rangeLabel})
             </button>
           </form>
         </div>
@@ -2105,52 +2130,66 @@ export default function MitemasukaPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                {
-                  id: 'daily' as const,
-                  title: '24 Saatlik Pas',
-                  price: '29 ₺',
-                  sub: 'Bugünlük',
-                },
-                {
-                  id: 'weekly' as const,
-                  title: 'Haftalık Pas',
-                  price: '79 ₺',
-                  sub: 'En Popüler',
-                },
-                {
-                  id: 'monthly' as const,
-                  title: 'Aylık Plus',
-                  price: '149 ₺',
-                  sub: 'En Avantajlı',
-                },
-              ].map((pkg) => (
-                <button
-                  key={pkg.id}
-                  onClick={() => setSelectedPlanOption(pkg.id)}
-                  className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-between ${
-                    selectedPlanOption === pkg.id
-                      ? 'bg-amber-400/15 border-amber-400 text-white shadow-lg'
-                      : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
-                  }`}
-                >
-                  <span className="text-[10px] uppercase tracking-wider text-amber-300 font-semibold">
-                    {pkg.sub}
-                  </span>
-                  <span className="text-base font-extrabold text-white my-1">
-                    {pkg.price}
-                  </span>
-                  <span className="text-[11px]">{pkg.title}</span>
-                </button>
-              ))}
+            <div className="space-y-2">
+              <div className="text-center text-xs text-emerald-400 font-semibold">
+                ✨ Tanışma dönemimize özel tüm Plus ayrıcalıkları şimdilik
+                ücretsizdir
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  {
+                    id: 'daily' as const,
+                    title: '24 Saatlik Pas',
+                    price: '29 ₺',
+                    sub: 'Bugünlük',
+                  },
+                  {
+                    id: 'weekly' as const,
+                    title: 'Haftalık Pas',
+                    price: '79 ₺',
+                    sub: 'En Popüler',
+                  },
+                  {
+                    id: 'monthly' as const,
+                    title: 'Aylık Plus',
+                    price: '149 ₺',
+                    sub: 'En Avantajlı',
+                  },
+                ].map((pkg) => (
+                  <button
+                    key={pkg.id}
+                    onClick={() => setSelectedPlanOption(pkg.id)}
+                    className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-between ${
+                      selectedPlanOption === pkg.id
+                        ? 'bg-amber-400/15 border-amber-400 text-white shadow-lg'
+                        : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
+                    }`}
+                  >
+                    <span className="text-[10px] uppercase tracking-wider text-amber-300 font-semibold">
+                      {pkg.sub}
+                    </span>
+                    <div className="my-1 flex flex-col items-center">
+                      <span className="relative inline-block text-sm font-bold text-[#8696a0] line-through decoration-rose-500 decoration-2">
+                        {pkg.price}
+                        <span className="absolute inset-0 flex items-center justify-center text-rose-500 font-black text-base pointer-events-none">
+                          ✕
+                        </span>
+                      </span>
+                      <span className="text-xs font-extrabold text-emerald-400">
+                        Ücretsiz
+                      </span>
+                    </div>
+                    <span className="text-[11px]">{pkg.title}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <button
               onClick={handleActivatePlus}
               className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 to-emerald-400 text-black font-bold text-sm hover:brightness-110 transition shadow-lg"
             >
-              ⚡ Seçili Paketi Hemen Aktif Et
+              ⚡ Seçili Paketi Ücretsiz Aktif Et
             </button>
           </div>
         </div>
