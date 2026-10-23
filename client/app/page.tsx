@@ -2448,7 +2448,7 @@ export default function MitemasukaPage() {
                         onClick={() => {
                           openDm(item.senderClientId, item.senderName);
                         }}
-                        className="text-xs font-bold hover:underline flex items-center gap-1"
+                        className="text-[13px] font-bold hover:underline flex items-center gap-1"
                         style={{ color: item.senderColor || '#2563EB' }}
                       >
                         <span>{item.senderName}</span>
@@ -2509,14 +2509,14 @@ export default function MitemasukaPage() {
 
                   <div className="flex items-end justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                      <p className="text-base whitespace-pre-wrap break-words leading-snug">
                         {item.text}
                       </p>
                       {!isMine &&
                         translations[`${item.id}_${uiLang}`] &&
                         !hiddenTranslationIds[`${item.id}_${uiLang}`] && (
-                          <p className="mt-1 pt-1 border-t border-slate-200/70 dark:border-neutral-700/70 text-xs text-[#1A81E5] dark:text-blue-300 whitespace-pre-wrap break-words flex items-start gap-1">
-                            <Globe className="w-3 h-3 shrink-0 translate-y-0.5 opacity-80" />
+                          <p className="mt-1.5 pt-1 border-t border-slate-200/70 dark:border-neutral-700/70 text-sm text-[#1A81E5] dark:text-blue-300 whitespace-pre-wrap break-words flex items-start gap-1">
+                            <Globe className="w-3.5 h-3.5 shrink-0 translate-y-0.5 opacity-80" />
                             <span>{translations[`${item.id}_${uiLang}`]}</span>
                           </p>
                         )}
@@ -2539,7 +2539,7 @@ export default function MitemasukaPage() {
                         : 'border-slate-100 dark:border-white/5'
                     }`}
                   >
-                    {!isMine && (
+                    {!isMine && new RegExp('\\p{L}', 'u').test(item.text) && (
                       <button
                         type="button"
                         onClick={() =>
@@ -2682,7 +2682,7 @@ export default function MitemasukaPage() {
                         className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          className={`max-w-[85%] sm:max-w-[72%] rounded-2xl px-3.5 py-2 shadow-sm text-sm ${
+                          className={`max-w-[85%] sm:max-w-[72%] rounded-2xl px-3.5 py-2 shadow-sm text-base leading-snug ${
                             mine
                               ? 'bg-[#1A81E5] text-white rounded-tr-xs shadow-[#1A81E5]/20'
                               : 'bg-white dark:bg-neutral-800 text-slate-800 dark:text-neutral-100 rounded-tl-xs border border-slate-200/90 dark:border-neutral-700'
@@ -2692,8 +2692,8 @@ export default function MitemasukaPage() {
                           {!mine &&
                             translations[trKey] &&
                             !hiddenTranslationIds[trKey] && (
-                              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-neutral-700 text-blue-600 dark:text-blue-300 text-[13px] whitespace-pre-wrap break-words flex items-start gap-1">
-                                <Globe className="w-3 h-3 shrink-0 translate-y-1 opacity-80" />
+                              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-neutral-700 text-blue-600 dark:text-blue-300 text-sm whitespace-pre-wrap break-words flex items-start gap-1">
+                                <Globe className="w-3.5 h-3.5 shrink-0 translate-y-1 opacity-80" />
                                 <span>{translations[trKey]}</span>
                               </div>
                             )}
@@ -2806,7 +2806,7 @@ export default function MitemasukaPage() {
                 ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} — ${t.inputRoomPlaceholder}`
                 : t.inputAllowLocFirst
             }
-            className="flex-1 min-w-0 bg-slate-100 dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 placeholder-slate-400 dark:placeholder-neutral-500 border border-slate-200/80 dark:border-neutral-700 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white dark:focus:bg-neutral-800 transition"
+            className="flex-1 min-w-0 bg-slate-100 dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 placeholder-slate-400 dark:placeholder-neutral-500 border border-slate-200/80 dark:border-neutral-700 text-base rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white dark:focus:bg-neutral-800 transition"
           />
 
           <button
