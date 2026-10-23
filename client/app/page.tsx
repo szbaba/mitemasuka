@@ -25,6 +25,7 @@ import {
   MessageSquareLock,
   Check,
   Copy,
+  Mail,
   Info,
   Globe,
   RefreshCw,
@@ -364,6 +365,7 @@ export default function MitemasukaPage() {
   const [nicknameInput, setNicknameInput] = useState<string>('');
   const [showRulesModal, setShowRulesModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [copiedEmail, setCopiedEmail] = useState<boolean>(false);
 
   // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları + Tema (Corsecure Light/Dark) + Çoklu Dil
   const [uiLang, setUiLang] = useState<LangCode>('tr');
@@ -1646,6 +1648,40 @@ export default function MitemasukaPage() {
               </span>
               <span className="text-xs">{showSimBar ? t.hide : t.show}</span>
             </button>
+          </div>
+
+          {/* İLETİŞİM */}
+          <div className="px-4 py-2.5 mt-1 border-t border-slate-200 dark:border-neutral-700/80">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-neutral-500 mb-1">
+              {t.contact}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <a
+                href="mailto:suleymanbaba@gmail.com"
+                className="flex items-center gap-2 text-xs text-slate-600 dark:text-neutral-300 hover:text-[#1A81E5] dark:hover:text-blue-300 transition min-w-0"
+              >
+                <Mail className="w-4 h-4 shrink-0" />
+                <span className="truncate">suleymanbaba@gmail.com</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText('suleymanbaba@gmail.com');
+                  setCopiedEmail(true);
+                  setTimeout(() => setCopiedEmail(false), 2000);
+                }}
+                className="p-1.5 rounded-lg text-slate-500 dark:text-neutral-400 hover:bg-slate-100 dark:hover:bg-neutral-700/60 shrink-0 flex items-center gap-1 text-[11px]"
+                aria-label={t.copy}
+              >
+                {copiedEmail ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" /> {t.copied}
+                  </>
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
