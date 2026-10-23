@@ -1453,16 +1453,16 @@ export default function MitemasukaPage() {
     <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-slate-50 dark:bg-neutral-900 text-slate-900 dark:text-neutral-100 border-x border-slate-200/80 dark:border-neutral-800 shadow-2xl overflow-hidden transition-colors duration-200">
       {/* ÜST BAR (Corsecure Clean Trust Navbar Stili) */}
       <header className="bg-white/85 dark:bg-neutral-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-neutral-800 z-30 shrink-0 transition-colors">
-        <div className="px-3.5 py-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 select-none min-w-0">
-            <div className="relative flex items-center justify-center w-[84px] h-[84px] shrink-0 -my-3">
+        <div className="pl-1 pr-3 py-2 flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1 select-none min-w-0">
+            <div className="relative flex items-center justify-center w-[84px] h-[84px] shrink-0 -my-3 -ml-2.5">
               <img
                 src="/logo-karga.png"
                 alt="Mitemasuka"
                 className="w-[84px] h-[84px] object-contain"
               />
               <span
-                className={`absolute bottom-2 right-2 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
+                className={`absolute bottom-3.5 right-3.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
                   isConnected ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
