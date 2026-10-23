@@ -21,6 +21,7 @@ import {
   VolumeX,
   ShieldAlert,
   Ban,
+  ArrowLeft,
   Reply,
   MessageSquareLock,
   Check,
@@ -83,6 +84,7 @@ interface ChatItem {
   replyTo?: ReplyInfo | null;
   whisperToId?: string | null;
   whisperToName?: string | null;
+  whisperToClientId?: string | null;
   reactions?: Record<string, string[]>;
   systemType?: 'join' | 'leave' | 'info';
   timestamp: string;
@@ -388,10 +390,19 @@ export default function MitemasukaPage() {
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
-  const [whisperTarget, setWhisperTarget] = useState<{
-    id: string;
+  // Özel konuşmalar (fısıltılar) oda akışından ayrı tutulur
+  const [whispers, setWhispers] = useState<ChatItem[]>([]);
+  const [activeView, setActiveView] = useState<'room' | 'dm'>('room');
+  const [dmPeer, setDmPeer] = useState<{
+    clientId: string;
     username: string;
   } | null>(null);
+  const [unreadByPeer, setUnreadByPeer] = useState<Record<string, number>>({});
+  const dmViewRef = useRef<{ view: 'room' | 'dm'; peer: string | null }>({
+    view: 'room',
+    peer: null,
+  });
+  const dmEndRef = useRef<HTMLDivElement | null>(null);
   const [blockedClientIds, setBlockedClientIds] = useState<
     Record<string, string>
   >({});
@@ -650,6 +661,15 @@ export default function MitemasukaPage() {
           } else if (event === 'joined_room') {
             setRoomId(data.roomId);
             setSelectedRadius(data.radius);
+            // Yeni odaya girişte özel konuşmalar sunucudan yeniden yüklenir
+            setWhispers(
+              Array.isArray(data.whispers)
+                ? data.whispers.map((m: ChatItem) => ({ ...m, kind: 'chat' }))
+                : []
+            );
+            setUnreadByPeer({});
+            setDmPeer(null);
+            setActiveView('room');
             if (Array.isArray(data.history) && data.history.length > 0) {
               setMessages(
                 data.history.map((m: ChatItem) => ({
@@ -688,6 +708,52 @@ export default function MitemasukaPage() {
                 String(data.text || '')
               );
             }
+          } else if (
+            event === 'chat_message' &&
+            (data.whisperToClientId || data.whisperToId)
+          ) {
+            // Özel mesaj: oda akışına değil özel konuşmalara eklenir
+            setWhispers((prev) => {
+              if (prev.some((m) => m.id === data.id)) return prev;
+              return [...prev, { ...data, kind: 'chat' }];
+            });
+            const fromMe =
+              data.senderId === myIdRef.current ||
+              data.senderClientId === storedClientId;
+            if (!fromMe) {
+              const peer = data.senderClientId as string;
+              const v = dmViewRef.current;
+              const viewing =
+                v.view === 'dm' &&
+                v.peer === peer &&
+                document.visibilityState === 'visible';
+              if (!viewing) {
+                setUnreadByPeer((prev) => ({
+                  ...prev,
+                  [peer]: (prev[peer] || 0) + 1,
+                }));
+              }
+              if (whisperNotifRef.current) {
+                playTinSound('whisper');
+                triggerBrowserNotification(
+                  `🔒 ${data.senderName} (Özel Fısıltı)`,
+                  String(data.text || '')
+                );
+              }
+            }
+          } else if (event === 'whisper_failed') {
+            // Alıcı odadan ayrıldı: konuşmada bilgi notu göster
+            setWhispers((prev) => [
+              ...prev,
+              {
+                id: `wf_${Date.now()}`,
+                kind: 'system',
+                systemType: 'info',
+                text: String(data.targetName || ''),
+                whisperToClientId: data.targetClientId,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
           } else if (event === 'chat_message') {
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.id)) return prev;
@@ -842,6 +908,84 @@ export default function MitemasukaPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typingUsers]);
 
+  // Özel konuşma görünümü senkronu (ws olay işleyicisi bu ref'i okur)
+  useEffect(() => {
+    dmViewRef.current = { view: activeView, peer: dmPeer?.clientId || null };
+    if (activeView === 'dm' && dmPeer) {
+      const peerId = dmPeer.clientId;
+      setUnreadByPeer((prev) =>
+        prev[peerId] ? { ...prev, [peerId]: 0 } : prev
+      );
+    }
+  }, [activeView, dmPeer, whispers]);
+
+  useEffect(() => {
+    if (activeView === 'dm') {
+      dmEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [whispers, activeView, dmPeer]);
+
+  // Konuşma listesi: kişi başına son mesaj, en yeni üstte
+  const dmThreads = React.useMemo(() => {
+    const map = new Map<
+      string,
+      { peerClientId: string; peerName: string; last: ChatItem }
+    >();
+    whispers.forEach((w) => {
+      if (w.kind !== 'chat') return;
+      const mine = w.senderClientId === myClientId;
+      const peer = mine ? w.whisperToClientId : w.senderClientId;
+      if (!peer) return;
+      map.set(peer, {
+        peerClientId: peer,
+        peerName: (mine ? w.whisperToName : w.senderName) || '',
+        last: w,
+      });
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      b.last.timestamp.localeCompare(a.last.timestamp)
+    );
+  }, [whispers, myClientId]);
+
+  const totalUnreadDm = Object.values(unreadByPeer).reduce(
+    (sum, n) => sum + n,
+    0
+  );
+
+  const dmThreadMessages = React.useMemo(() => {
+    if (!dmPeer) return [];
+    return whispers.filter((w) =>
+      w.kind === 'chat'
+        ? (w.senderClientId === myClientId &&
+            w.whisperToClientId === dmPeer.clientId) ||
+          w.senderClientId === dmPeer.clientId
+        : w.whisperToClientId === dmPeer.clientId
+    );
+  }, [whispers, dmPeer, myClientId]);
+
+  const dmPeerOnline = dmPeer
+    ? roomUsers.some((u) => u.clientId === dmPeer.clientId)
+    : false;
+
+  // Özel konuşma başlat / aç. Başlatmak Plus ister, gelen mesaja cevap ücretsizdir.
+  const openDm = (peerClientId?: string, peerName?: string) => {
+    if (!peerClientId || !peerName || peerClientId === myClientId) return;
+    const hasIncoming = whispers.some(
+      (w) => w.kind === 'chat' && w.senderClientId === peerClientId
+    );
+    if (!isPlus && !hasIncoming) {
+      setPaywallReason(
+        `${peerName} adlı kişiye 1'e 1 Özel Fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.`
+      );
+      setShowPlusModal(true);
+      return;
+    }
+    setDmPeer({ clientId: peerClientId, username: peerName });
+    setActiveView('dm');
+    setUnreadByPeer((prev) => ({ ...prev, [peerClientId]: 0 }));
+    setShowMembersDrawer(false);
+  };
+
   useEffect(() => {
     channelEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChannel?.messages]);
@@ -850,7 +994,7 @@ export default function MitemasukaPage() {
   useEffect(() => {
     if (!autoTranslate) return;
 
-    messages.forEach((m) => {
+    [...messages, ...whispers].forEach((m) => {
       if (m.kind !== 'chat') return;
       const isMine =
         m.senderId === myId ||
@@ -881,7 +1025,7 @@ export default function MitemasukaPage() {
         });
       });
     }
-  }, [messages, activeChannel, uiLang, autoTranslate, myId, myClientId]);
+  }, [messages, whispers, activeChannel, uiLang, autoTranslate, myId, myClientId]);
 
   const handleToggleOrTranslateMessage = async (msgId: string, text: string) => {
     const key = `${msgId}_${uiLang}`;
@@ -926,11 +1070,14 @@ export default function MitemasukaPage() {
       return;
     }
 
+    const inDm = activeView === 'dm';
+    if (inDm && (!dmPeer || !dmPeerOnline)) return;
+
     socket.emit('send_message', {
       text: inputText.trim(),
-      replyTo: replyingTo,
-      whisperToId: whisperTarget?.id || null,
-      whisperToName: whisperTarget?.username || null,
+      replyTo: inDm ? null : replyingTo,
+      whisperToClientId: inDm ? dmPeer!.clientId : null,
+      whisperToName: inDm ? dmPeer!.username : null,
     });
     socket.emit('typing', false);
     setInputText('');
@@ -1754,15 +1901,7 @@ export default function MitemasukaPage() {
                   <button
                     onClick={() => {
                       if (isMe) return;
-                      if (!isPlus) {
-                        setPaywallReason(
-                          `${u.username} adlı kişiye 1'e 1 Özel Fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.`
-                        );
-                        setShowPlusModal(true);
-                        return;
-                      }
-                      setWhisperTarget({ id: u.id, username: u.username });
-                      setShowMembersDrawer(false);
+                      openDm(u.clientId, u.username);
                     }}
                     className="font-semibold hover:underline flex items-center gap-1"
                     style={{ color: u.color }}
@@ -1957,6 +2096,42 @@ export default function MitemasukaPage() {
             CHAT_BACKGROUNDS[0].className
           }`}
         >
+          {/* ODA / ÖZEL SEKMELERİ */}
+          <div className="sticky top-0 z-10 -mx-4 -mt-3 px-4 pt-3 pb-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur border-b border-slate-200/70 dark:border-neutral-800">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-neutral-800 max-w-xs mx-auto">
+              <button
+                type="button"
+                onClick={() => setActiveView('room')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  activeView === 'room'
+                    ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-neutral-400'
+                }`}
+              >
+                {t.tabRoom}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView('dm')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                  activeView === 'dm'
+                    ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 dark:text-neutral-400'
+                }`}
+              >
+                <MessageSquareLock className="w-3.5 h-3.5" />
+                <span>{t.tabPrivate}</span>
+                {totalUnreadDm > 0 && (
+                  <span className="min-w-4 h-4 px-1 rounded-full bg-[#1A81E5] text-white text-[10px] font-bold flex items-center justify-center">
+                    {totalUnreadDm}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {activeView === 'room' ? (
+          <>
           <div className="flex justify-center my-2">
             <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs">
               <span className="text-[#1A81E5] font-semibold">
@@ -2081,19 +2256,7 @@ export default function MitemasukaPage() {
                     <div className="flex items-center justify-between gap-3 mb-0.5">
                       <button
                         onClick={() => {
-                          if (!isPlus) {
-                            setPaywallReason(
-                              `${item.senderName} adlı kişiye 1'e 1 Özel Fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.`
-                            );
-                            setShowPlusModal(true);
-                            return;
-                          }
-                          if (item.senderId && item.senderName) {
-                            setWhisperTarget({
-                              id: item.senderId,
-                              username: item.senderName,
-                            });
-                          }
+                          openDm(item.senderClientId, item.senderName);
                         }}
                         className="text-xs font-bold hover:underline flex items-center gap-1"
                         style={{ color: item.senderColor || '#2563EB' }}
@@ -2267,37 +2430,157 @@ export default function MitemasukaPage() {
           )}
 
           <div ref={messagesEndRef} />
+          </>
+          ) : (
+            <div className="space-y-2.5 pt-1">
+              {!dmPeer ? (
+                dmThreads.length === 0 ? (
+                  <div className="flex flex-col items-center text-center gap-2 py-14 text-slate-500 dark:text-neutral-400">
+                    <MessageSquareLock className="w-9 h-9 opacity-60" />
+                    <div className="text-sm font-semibold text-slate-700 dark:text-neutral-200">
+                      {t.dmEmptyTitle}
+                    </div>
+                    <p className="text-xs max-w-xs">{t.dmEmptyHint}</p>
+                  </div>
+                ) : (
+                  dmThreads.map((th) => {
+                    const online = roomUsers.some(
+                      (u) => u.clientId === th.peerClientId
+                    );
+                    const unread = unreadByPeer[th.peerClientId] || 0;
+                    return (
+                      <button
+                        key={th.peerClientId}
+                        type="button"
+                        onClick={() => openDm(th.peerClientId, th.peerName)}
+                        className="w-full flex items-center gap-3 bg-white dark:bg-neutral-800 border border-slate-200/90 dark:border-neutral-700 rounded-2xl px-3.5 py-3 text-left hover:bg-slate-50 dark:hover:bg-neutral-700/60 transition"
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                            online ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-neutral-600'
+                          }`}
+                        />
+                        <span className="flex-1 min-w-0">
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-bold truncate text-slate-900 dark:text-white">
+                              {th.peerName}
+                            </span>
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              {formatTime(th.last.timestamp)}
+                            </span>
+                          </span>
+                          <span className="block text-xs text-slate-500 dark:text-neutral-400 truncate">
+                            {th.last.senderClientId === myClientId
+                              ? `${t.you}: `
+                              : ''}
+                            {th.last.text}
+                          </span>
+                        </span>
+                        {unread > 0 && (
+                          <span className="min-w-5 h-5 px-1.5 rounded-full bg-[#1A81E5] text-white text-[11px] font-bold flex items-center justify-center shrink-0">
+                            {unread}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                )
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 bg-white/90 dark:bg-neutral-800/90 border border-slate-200/90 dark:border-neutral-700 rounded-2xl px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setDmPeer(null)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-700 text-slate-600 dark:text-neutral-300"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+                    <span className="font-bold text-sm truncate text-slate-900 dark:text-white">
+                      {dmPeer.username}
+                    </span>
+                    <span
+                      className={`text-[11px] font-medium shrink-0 ${
+                        dmPeerOnline
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      ● {dmPeerOnline ? t.dmOnline : t.dmOffline}
+                    </span>
+                  </div>
+                  <p className="text-center text-[11px] text-slate-400 dark:text-neutral-500 px-4">
+                    {t.dmEphemeral}
+                  </p>
+                  {dmThreadMessages.map((w) => {
+                    if (w.kind === 'system') {
+                      return (
+                        <div key={w.id} className="flex justify-center">
+                          <span className="text-xs px-3 py-1 rounded-full border bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30">
+                            {t.dmPeerLeft.replace('{name}', w.text || dmPeer.username)}
+                          </span>
+                        </div>
+                      );
+                    }
+                    const mine = w.senderClientId === myClientId;
+                    const trKey = `${w.id}_${uiLang}`;
+                    return (
+                      <div
+                        key={w.id}
+                        className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[85%] sm:max-w-[72%] rounded-2xl px-3.5 py-2 shadow-sm text-sm ${
+                            mine
+                              ? 'bg-[#1A81E5] text-white rounded-tr-xs shadow-[#1A81E5]/20'
+                              : 'bg-white dark:bg-neutral-800 text-slate-800 dark:text-neutral-100 rounded-tl-xs border border-slate-200/90 dark:border-neutral-700'
+                          }`}
+                        >
+                          <div className="whitespace-pre-wrap break-words">{w.text}</div>
+                          {!mine &&
+                            translations[trKey] &&
+                            !hiddenTranslationIds[trKey] && (
+                              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-neutral-700 text-blue-600 dark:text-blue-300 text-[13px] whitespace-pre-wrap break-words">
+                                🌐 {translations[trKey]}
+                              </div>
+                            )}
+                          <div
+                            className={`mt-0.5 text-[10px] text-right ${
+                              mine ? 'text-white/70' : 'text-slate-400'
+                            }`}
+                          >
+                            {formatTime(w.timestamp)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!dmPeerOnline && (
+                    <div className="text-center text-xs text-amber-700 dark:text-amber-300">
+                      {t.dmPeerLeft.replace('{name}', dmPeer.username)}
+                    </div>
+                  )}
+                  <div ref={dmEndRef} />
+                </>
+              )}
+            </div>
+          )}
         </main>
       )}
 
-      {/* YANITLAMA VEYA ÖZEL FISILTI ÇUBUĞU */}
-      {(replyingTo || whisperTarget) && (
+      {/* YANITLAMA ÇUBUĞU (özel konuşmalarda yanıtlama yok) */}
+      {replyingTo && activeView === 'room' && (
         <div className="bg-slate-100 dark:bg-neutral-800 px-4 py-2 border-t border-slate-200 dark:border-neutral-700 flex items-center justify-between text-xs">
-          {whisperTarget ? (
-            <div className="flex items-center gap-2 text-violet-700 dark:text-violet-300 font-medium">
-              <MessageSquareLock className="w-4 h-4" />
-              <span>
-                <strong>{whisperTarget.username}</strong> {t.whisperBannerPrefix}
-              </span>
-            </div>
-          ) : (
-            replyingTo && (
-              <div className="flex items-center gap-2 text-slate-600 dark:text-neutral-300 truncate">
-                <Reply className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span className="truncate">
-                  <strong className="text-blue-700 dark:text-blue-400">
-                    {replyingTo.senderName}:
-                  </strong>{' '}
-                  {replyingTo.text}
-                </span>
-              </div>
-            )
-          )}
+          <div className="flex items-center gap-2 text-slate-600 dark:text-neutral-300 truncate">
+            <Reply className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="truncate">
+              <strong className="text-blue-700 dark:text-blue-400">
+                {replyingTo.senderName}:
+              </strong>{' '}
+              {replyingTo.text}
+            </span>
+          </div>
           <button
-            onClick={() => {
-              setReplyingTo(null);
-              setWhisperTarget(null);
-            }}
+            onClick={() => setReplyingTo(null)}
             className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
           >
             <X className="w-4 h-4" />
@@ -2313,12 +2596,19 @@ export default function MitemasukaPage() {
             enterKeyHint="send"
             value={inputText}
             onChange={handleInputChange}
-            disabled={!effectiveCoords || !isConnected || isBanned}
+            disabled={
+              !effectiveCoords ||
+              !isConnected ||
+              isBanned ||
+              (activeView === 'dm' && (!dmPeer || !dmPeerOnline))
+            }
             placeholder={
               isBanned
                 ? t.inputBanned
-                : whisperTarget
-                ? `${whisperTarget.username} — ${t.inputWhisperPlaceholder}`
+                : activeView === 'dm'
+                ? dmPeer
+                  ? `${dmPeer.username} — ${t.inputWhisperPlaceholder}`
+                  : t.dmPickHint
                 : effectiveCoords
                 ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} — ${t.inputRoomPlaceholder}`
                 : t.inputAllowLocFirst
@@ -2329,7 +2619,11 @@ export default function MitemasukaPage() {
           <button
             type="submit"
             disabled={
-              !inputText.trim() || !effectiveCoords || !isConnected || isBanned
+              !inputText.trim() ||
+              !effectiveCoords ||
+              !isConnected ||
+              isBanned ||
+              (activeView === 'dm' && (!dmPeer || !dmPeerOnline))
             }
             className="w-10 h-10 rounded-xl bg-[#1A81E5] hover:bg-[#156fc7] disabled:opacity-40 text-white flex items-center justify-center transition shrink-0 shadow-sm shadow-[#1A81E5]/20"
           >

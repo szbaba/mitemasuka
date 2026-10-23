@@ -5,6 +5,8 @@
 
 const FREE_DAILY_MESSAGE_LIMIT = 15;
 const MAX_ROOM_HISTORY = 25;
+// Bir odada tutulacak maksimum özel konuşma (fısıltı) mesajı sayısı
+const MAX_ROOM_WHISPERS = 100;
 const REPORT_BAN_THRESHOLD = 3;
 
 const USER_COLORS = [
@@ -143,6 +145,8 @@ export class MitemasukaHub {
       dailyCount: 0,
       quotaDay: today,
       reportedBy: new Set(),
+      // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
+      whisperContacts: new Set(),
       isBanned: false,
     };
     this.profiles.set(clientId, newProfile);
@@ -299,6 +303,7 @@ export class MitemasukaHub {
         centerLng: lng,
         radius: targetRadius,
         messages: [],
+        whispers: [],
         createdAt: Date.now(),
       });
     }
@@ -312,6 +317,14 @@ export class MitemasukaHub {
       username: user.username,
       userId: user.id,
       history: roomObj ? roomObj.messages : [],
+      // Sadece bu kullanıcının taraf olduğu özel konuşmalar
+      whispers: roomObj
+        ? (roomObj.whispers || []).filter(
+            (w) =>
+              w.senderClientId === user.clientId ||
+              w.whisperToClientId === user.clientId
+          )
+        : [],
     });
 
     if (!user.ghostMode) {
@@ -543,16 +556,50 @@ export class MitemasukaHub {
       const text = String(data?.text || '').trim();
       if (!text) return;
 
-      const whisperToId = data?.whisperToId || null;
-      const whisperToName = data?.whisperToName || null;
+      // Özel mesaj (fısıltı): alıcı kalıcı clientId ile belirlenir
+      let whisperToId = null;
+      let whisperToName = null;
+      let whisperToClientId = null;
+      let whisperTargets = [];
+      const reqToClientId = data?.whisperToClientId
+        ? String(data.whisperToClientId)
+        : null;
+      const reqToSocketId = data?.whisperToId || null;
 
-      if (whisperToId && !user.isPlus) {
-        this.sendEvent(user.ws, 'paywall_trigger', {
-          reason: 'whisper_locked',
-          message:
-            'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.',
-        });
-        return;
+      if (reqToClientId || reqToSocketId) {
+        whisperToClientId =
+          reqToClientId ||
+          (this.users.get(reqToSocketId)
+            ? this.users.get(reqToSocketId).clientId
+            : null);
+        if (!whisperToClientId || whisperToClientId === user.clientId) return;
+
+        // Konuşmayı başlatmak Plus ister; kendisine yazılmış birine cevap vermek ücretsizdir
+        if (!user.isPlus && !prof.whisperContacts.has(whisperToClientId)) {
+          this.sendEvent(user.ws, 'paywall_trigger', {
+            reason: 'whisper_locked',
+            message:
+              'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.',
+          });
+          return;
+        }
+
+        // Alıcı aynı odada ve çevrimiçi olmalı (sunucu tarafı doğrulama)
+        for (const [, u] of this.users.entries()) {
+          if (u.clientId === whisperToClientId && u.roomId === user.roomId) {
+            whisperTargets.push(u);
+          }
+        }
+        if (whisperTargets.length === 0) {
+          this.sendEvent(user.ws, 'whisper_failed', {
+            reason: 'user_left',
+            targetClientId: whisperToClientId,
+            targetName: data?.whisperToName || null,
+          });
+          return;
+        }
+        whisperToId = whisperTargets[0].id;
+        whisperToName = whisperTargets[0].username;
       }
 
       if (!user.isPlus) {
@@ -580,14 +627,35 @@ export class MitemasukaHub {
         replyTo: data?.replyTo || null,
         whisperToId,
         whisperToName,
+        whisperToClientId,
         reactions: {},
         timestamp: new Date().toISOString(),
       };
 
-      if (whisperToId) {
-        const target = this.users.get(whisperToId);
-        if (target) this.sendEvent(target.ws, 'chat_message', messageData);
-        this.sendEvent(user.ws, 'chat_message', messageData);
+      if (whisperToClientId) {
+        // Alıcı artık bu kullanıcıya ücretsiz cevap verebilir
+        this.getOrCreateProfile(whisperToClientId).whisperContacts.add(
+          user.clientId
+        );
+
+        const roomObj = this.rooms.get(user.roomId);
+        if (roomObj) {
+          if (!roomObj.whispers) roomObj.whispers = [];
+          roomObj.whispers.push(messageData);
+          if (roomObj.whispers.length > MAX_ROOM_WHISPERS) {
+            roomObj.whispers.shift();
+          }
+        }
+
+        // Her iki tarafın tüm açık sekmelerine ilet
+        for (const [, u] of this.users.entries()) {
+          if (
+            u.roomId === user.roomId &&
+            (u.clientId === user.clientId || u.clientId === whisperToClientId)
+          ) {
+            this.sendEvent(u.ws, 'chat_message', messageData);
+          }
+        }
         return;
       }
 
@@ -609,25 +677,53 @@ export class MitemasukaHub {
       if (!allowedEmojis.includes(data.emoji)) return;
 
       const roomObj = this.rooms.get(user.roomId);
+      let whisperMsg = null;
       if (roomObj) {
         const targetMsg = roomObj.messages.find((m) => m.id === data.messageId);
-        if (targetMsg) {
-          if (!targetMsg.reactions) targetMsg.reactions = {};
-          if (!targetMsg.reactions[data.emoji]) {
-            targetMsg.reactions[data.emoji] = [];
+        if (!targetMsg) {
+          whisperMsg = (roomObj.whispers || []).find(
+            (m) => m.id === data.messageId
+          );
+          // Özel mesaja sadece konuşmanın tarafları tepki verebilir
+          if (
+            whisperMsg &&
+            whisperMsg.senderClientId !== user.clientId &&
+            whisperMsg.whisperToClientId !== user.clientId
+          ) {
+            return;
           }
-          const list = targetMsg.reactions[data.emoji];
+        }
+        const reactTarget = targetMsg || whisperMsg;
+        if (reactTarget) {
+          if (!reactTarget.reactions) reactTarget.reactions = {};
+          if (!reactTarget.reactions[data.emoji]) {
+            reactTarget.reactions[data.emoji] = [];
+          }
+          const list = reactTarget.reactions[data.emoji];
           const idx = list.indexOf(user.username);
           if (idx >= 0) list.splice(idx, 1);
           else list.push(user.username);
         }
       }
 
-      this.broadcastToRoom(user.roomId, 'message_reaction', {
+      const reactionPayload = {
         messageId: data.messageId,
         emoji: data.emoji,
         username: user.username,
-      });
+      };
+      if (whisperMsg) {
+        for (const [, u] of this.users.entries()) {
+          if (
+            u.roomId === user.roomId &&
+            (u.clientId === whisperMsg.senderClientId ||
+              u.clientId === whisperMsg.whisperToClientId)
+          ) {
+            this.sendEvent(u.ws, 'message_reaction', reactionPayload);
+          }
+        }
+      } else {
+        this.broadcastToRoom(user.roomId, 'message_reaction', reactionPayload);
+      }
       return;
     }
 

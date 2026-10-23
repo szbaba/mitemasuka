@@ -22,6 +22,8 @@ const PORT = process.env.PORT || 4000;
 const FREE_DAILY_MESSAGE_LIMIT = 15;
 // Bir odada tutulacak maksimum geçmiş mesaj sayısı (F5 koruması)
 const MAX_ROOM_HISTORY = 25;
+// Bir odada tutulacak maksimum özel konuşma (fısıltı) mesajı sayısı
+const MAX_ROOM_WHISPERS = 100;
 // Otomatik ban/susturma için gereken farklı şikayetçi sayısı
 const REPORT_BAN_THRESHOLD = 3;
 
@@ -111,6 +113,8 @@ function getOrCreateProfile(clientId) {
     dailyCount: 0,
     quotaDay: today,
     reportedBy: new Set(),
+    // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
+    whisperContacts: new Set(),
     isBanned: false,
   };
   profiles.set(clientId, newProfile);
@@ -295,6 +299,7 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
       centerLng: lng,
       radius: targetRadius,
       messages: [],
+      whispers: [],
       createdAt: Date.now(),
     });
   }
@@ -310,6 +315,14 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
     username: user.username,
     userId: user.id,
     history: roomObj ? roomObj.messages : [],
+    // Sadece bu kullanıcının taraf olduğu özel konuşmalar
+    whispers: roomObj
+      ? (roomObj.whispers || []).filter(
+          (w) =>
+            w.senderClientId === user.clientId ||
+            w.whisperToClientId === user.clientId
+        )
+      : [],
   });
 
   if (!user.ghostMode) {
@@ -471,17 +484,48 @@ io.on('connection', (socket) => {
     const text = String(payload?.text || '').trim();
     if (!text) return;
 
-    const whisperToId = payload?.whisperToId || null;
-    const whisperToName = payload?.whisperToName || null;
+    // 3. 1'e 1 Özel Fısıltı (DM): alıcı kalıcı clientId ile belirlenir
+    let whisperToId = null;
+    let whisperToName = null;
+    let whisperToClientId = null;
+    const whisperTargets = [];
+    const reqToClientId = payload?.whisperToClientId
+      ? String(payload.whisperToClientId)
+      : null;
+    const reqToSocketId = payload?.whisperToId || null;
 
-    // 3. 1'e 1 Özel Fısıltı (DM) Kontrolü -> Plus Özelliği
-    if (whisperToId && !user.isPlus) {
-      socket.emit('paywall_trigger', {
-        reason: 'whisper_locked',
-        message:
-          'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için MiniTemas Plus gereklidir.',
-      });
-      return;
+    if (reqToClientId || reqToSocketId) {
+      whisperToClientId =
+        reqToClientId ||
+        (users.get(reqToSocketId) ? users.get(reqToSocketId).clientId : null);
+      if (!whisperToClientId || whisperToClientId === user.clientId) return;
+
+      // Konuşmayı başlatmak Plus ister; kendisine yazılmış birine cevap vermek ücretsizdir
+      if (!user.isPlus && !prof.whisperContacts.has(whisperToClientId)) {
+        socket.emit('paywall_trigger', {
+          reason: 'whisper_locked',
+          message:
+            'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için MiniTemas Plus gereklidir.',
+        });
+        return;
+      }
+
+      // Alıcı aynı odada ve çevrimiçi olmalı (sunucu tarafı doğrulama)
+      for (const [, u] of users.entries()) {
+        if (u.clientId === whisperToClientId && u.roomId === user.roomId) {
+          whisperTargets.push(u);
+        }
+      }
+      if (whisperTargets.length === 0) {
+        socket.emit('whisper_failed', {
+          reason: 'user_left',
+          targetClientId: whisperToClientId,
+          targetName: payload?.whisperToName || null,
+        });
+        return;
+      }
+      whisperToId = whisperTargets[0].id;
+      whisperToName = whisperTargets[0].username;
     }
 
     // 4. Günlük Mesaj Kotası Kontrolü (Model B -> Ücretsiz kullanıcılar günde 15 mesaj)
@@ -510,14 +554,31 @@ io.on('connection', (socket) => {
       replyTo: payload?.replyTo || null, // { id, senderName, text }
       whisperToId,
       whisperToName,
+      whisperToClientId,
       reactions: {},
       timestamp: new Date().toISOString(),
     };
 
-    // Özel Fısıltıysa sadece alıcıya ve göndericiye ilet
-    if (whisperToId) {
-      socket.to(whisperToId).emit('chat_message', messageData);
-      socket.emit('chat_message', messageData);
+    // Özel Fısıltıysa sadece iki tarafın tüm açık sekmelerine ilet
+    if (whisperToClientId) {
+      // Alıcı artık bu kullanıcıya ücretsiz cevap verebilir
+      getOrCreateProfile(whisperToClientId).whisperContacts.add(user.clientId);
+
+      const wRoom = rooms.get(user.roomId);
+      if (wRoom) {
+        if (!wRoom.whispers) wRoom.whispers = [];
+        wRoom.whispers.push(messageData);
+        if (wRoom.whispers.length > MAX_ROOM_WHISPERS) wRoom.whispers.shift();
+      }
+
+      for (const [, u] of users.entries()) {
+        if (
+          u.roomId === user.roomId &&
+          (u.clientId === user.clientId || u.clientId === whisperToClientId)
+        ) {
+          io.to(u.id).emit('chat_message', messageData);
+        }
+      }
       return;
     }
 
@@ -542,14 +603,29 @@ io.on('connection', (socket) => {
     if (!allowedEmojis.includes(data.emoji)) return;
 
     const roomObj = rooms.get(user.roomId);
+    let whisperMsg = null;
     if (roomObj) {
       const targetMsg = roomObj.messages.find((m) => m.id === data.messageId);
-      if (targetMsg) {
-        if (!targetMsg.reactions) targetMsg.reactions = {};
-        if (!targetMsg.reactions[data.emoji]) {
-          targetMsg.reactions[data.emoji] = [];
+      if (!targetMsg) {
+        whisperMsg = (roomObj.whispers || []).find(
+          (m) => m.id === data.messageId
+        );
+        // Özel mesaja sadece konuşmanın tarafları tepki verebilir
+        if (
+          whisperMsg &&
+          whisperMsg.senderClientId !== user.clientId &&
+          whisperMsg.whisperToClientId !== user.clientId
+        ) {
+          return;
         }
-        const list = targetMsg.reactions[data.emoji];
+      }
+      const reactTarget = targetMsg || whisperMsg;
+      if (reactTarget) {
+        if (!reactTarget.reactions) reactTarget.reactions = {};
+        if (!reactTarget.reactions[data.emoji]) {
+          reactTarget.reactions[data.emoji] = [];
+        }
+        const list = reactTarget.reactions[data.emoji];
         const idx = list.indexOf(user.username);
         if (idx >= 0) {
           list.splice(idx, 1);
@@ -559,11 +635,24 @@ io.on('connection', (socket) => {
       }
     }
 
-    io.to(user.roomId).emit('message_reaction', {
+    const reactionPayload = {
       messageId: data.messageId,
       emoji: data.emoji,
       username: user.username,
-    });
+    };
+    if (whisperMsg) {
+      for (const [, u] of users.entries()) {
+        if (
+          u.roomId === user.roomId &&
+          (u.clientId === whisperMsg.senderClientId ||
+            u.clientId === whisperMsg.whisperToClientId)
+        ) {
+          io.to(u.id).emit('message_reaction', reactionPayload);
+        }
+      }
+    } else {
+      io.to(user.roomId).emit('message_reaction', reactionPayload);
+    }
   });
 
   // Kötü Amaçlı Kullanıcı Şikayet Etme
