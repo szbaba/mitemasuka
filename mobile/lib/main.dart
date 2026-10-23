@@ -237,6 +237,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   final Map<String, String> _translations = {};
   final Set<String> _translatingIds = {};
   Set<String> _blockedClientIds = {};
+  final Set<String> _expandedSystemGroups = {};
 
   @override
   void initState() {
@@ -936,6 +937,34 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             !_blockedClientIds.contains(m.senderClientId))
         .toList();
 
+    // Ardışık join/leave sistem mesajlarını web'deki gibi tek bir satırda grupla
+    final List<dynamic> displayItems = [];
+    int i = 0;
+    while (i < visibleMessages.length) {
+      final cur = visibleMessages[i];
+      if (cur.kind == 'system' &&
+          (cur.systemType == 'join' || cur.systemType == 'leave')) {
+        final List<ChatMessage> group = [cur];
+        int j = i + 1;
+        while (j < visibleMessages.length &&
+            visibleMessages[j].kind == 'system' &&
+            (visibleMessages[j].systemType == 'join' ||
+                visibleMessages[j].systemType == 'leave')) {
+          group.add(visibleMessages[j]);
+          j++;
+        }
+        if (group.length >= 2) {
+          displayItems.add(group);
+        } else {
+          displayItems.add(cur);
+        }
+        i = j;
+      } else {
+        displayItems.add(cur);
+        i++;
+      }
+    }
+
     return Scaffold(
       body: SafeArea(
         child: Stack(
@@ -1008,9 +1037,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   overflow: TextOverflow.ellipsis,
                                   text: TextSpan(
                                     style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 16.5,
                                       fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.2,
+                                      letterSpacing: -0.3,
                                     ),
                                     children: [
                                       TextSpan(
@@ -1304,11 +1333,102 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           : ListView.builder(
                               controller: _scrollController,
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              itemCount: visibleMessages.length,
+                              itemCount: displayItems.length,
                               itemBuilder: (ctx, idx) {
-                                final item = visibleMessages[idx];
+                                final entry = displayItems[idx];
+
+                                // Gruplanmış ardışık giriş/çıkış sistem mesajları
+                                if (entry is List<ChatMessage>) {
+                                  final groupKey = entry.first.id;
+                                  final isExpanded = _expandedSystemGroups.contains(groupKey);
+                                  final joins = entry.where((m) => m.systemType == 'join').length;
+                                  final leaves = entry.where((m) => m.systemType == 'leave').length;
+                                  final parts = <String>[];
+                                  if (joins > 0) parts.add('$joins kişi katıldı');
+                                  if (leaves > 0) parts.add('$leaves kişi ayrıldı');
+                                  final summary =
+                                      '${parts.join(' · ')} ${isExpanded ? '▴' : '▾'}';
+
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Column(
+                                      children: [
+                                        GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              if (isExpanded) {
+                                                _expandedSystemGroups.remove(groupKey);
+                                              } else {
+                                                _expandedSystemGroups.add(groupKey);
+                                              }
+                                            });
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: isDark
+                                                  ? const Color(0xFF262626)
+                                                  : Colors.white,
+                                              borderRadius: BorderRadius.circular(999),
+                                              border: Border.all(color: borderColor),
+                                            ),
+                                            child: Text(
+                                              summary,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        if (isExpanded)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Column(
+                                              children: entry.map((sub) {
+                                                final subLeave = sub.systemType == 'leave';
+                                                return Padding(
+                                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: subLeave
+                                                          ? kCrimsonRed.withValues(alpha: 0.10)
+                                                          : const Color(0xFF10B981)
+                                                              .withValues(alpha: 0.10),
+                                                      borderRadius: BorderRadius.circular(999),
+                                                    ),
+                                                    child: Text(
+                                                      sub.text,
+                                                      style: TextStyle(
+                                                        fontSize: 10.5,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: subLeave
+                                                            ? kCrimsonRed
+                                                            : const Color(0xFF10B981),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
+                                final item = entry as ChatMessage;
                                 if (item.kind == 'system') {
                                   final isLeave = item.systemType == 'leave';
+                                  final isJoin = item.systemType == 'join';
                                   return Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 4),
                                     child: Center(
@@ -1320,8 +1440,16 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                         decoration: BoxDecoration(
                                           color: isLeave
                                               ? kCrimsonRed.withValues(alpha: 0.12)
-                                              : const Color(0xFF10B981).withValues(alpha: 0.12),
+                                              : isJoin
+                                                  ? const Color(0xFF10B981)
+                                                      .withValues(alpha: 0.12)
+                                                  : (isDark
+                                                      ? const Color(0xFF262626)
+                                                      : Colors.white),
                                           borderRadius: BorderRadius.circular(999),
+                                          border: (!isLeave && !isJoin)
+                                              ? Border.all(color: borderColor)
+                                              : null,
                                         ),
                                         child: Text(
                                           item.text,
@@ -1331,7 +1459,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                             fontWeight: FontWeight.w500,
                                             color: isLeave
                                                 ? kCrimsonRed
-                                                : const Color(0xFF10B981),
+                                                : isJoin
+                                                    ? const Color(0xFF10B981)
+                                                    : textSecondary,
                                           ),
                                         ),
                                       ),
