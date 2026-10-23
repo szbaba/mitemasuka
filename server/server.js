@@ -888,12 +888,12 @@ io.on('connection', (socket) => {
     io.to(user.roomId).emit('chat_message', messageData);
   });
 
-  // Mesaja Emoji Tepkisi Bırakma (❤️ 😂 👍 🔥)
+  // Mesaja Emoji Tepkisi Bırakma
   socket.on('react_message', (data) => {
     const user = users.get(socket.id);
     if (!user || !user.roomId || !data?.messageId || !data?.emoji) return;
 
-    const allowedEmojis = ['❤️', '😂', '👍', '🔥'];
+    const allowedEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥'];
     if (!allowedEmojis.includes(data.emoji)) return;
 
     const roomObj = rooms.get(user.roomId);

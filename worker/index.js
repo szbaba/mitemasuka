@@ -1158,7 +1158,7 @@ export class MitemasukaHub {
 
     if (event === 'react_message') {
       if (!user.roomId || !data?.messageId || !data?.emoji) return;
-      const allowedEmojis = ['❤️', '😂', '👍', '🔥'];
+      const allowedEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥'];
       if (!allowedEmojis.includes(data.emoji)) return;
 
       const roomObj = this.rooms.get(user.roomId);
