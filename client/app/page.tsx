@@ -1434,14 +1434,14 @@ export default function MitemasukaPage() {
       <header className="bg-white/85 dark:bg-neutral-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-neutral-800 z-30 shrink-0 transition-colors">
         <div className="px-3.5 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 select-none min-w-0">
-            <div className="relative flex items-center justify-center w-14 h-14 shrink-0 -my-1.5">
+            <div className="relative flex items-center justify-center w-[84px] h-[84px] shrink-0 -my-3">
               <img
                 src="/logo-karga.png"
                 alt="Mitemasuka"
-                className="w-14 h-14 object-contain"
+                className="w-[84px] h-[84px] object-contain"
               />
               <span
-                className={`absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
+                className={`absolute bottom-2 right-2 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
                   isConnected ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
