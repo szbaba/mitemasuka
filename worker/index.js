@@ -79,6 +79,84 @@ export class MitemasukaHub {
     }
   }
 
+  isClientOnlineInRoom(roomId, clientId) {
+    if (!roomId || !clientId) return false;
+    for (const [, u] of this.users.entries()) {
+      if (u.roomId === roomId && u.clientId === clientId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  emitToClientsInRoom(roomId, clientIds, event, payload) {
+    if (!roomId) return;
+    const set = new Set(clientIds);
+    for (const [, u] of this.users.entries()) {
+      if (u.roomId === roomId && set.has(u.clientId)) {
+        this.sendEvent(u.ws, event, payload);
+      }
+    }
+  }
+
+  getUserDmSession(roomObj, clientId) {
+    if (!roomObj || !clientId) return null;
+    if (!roomObj.dmSessions) roomObj.dmSessions = [];
+    // Odadan düşmüş kullanıcıların eski oturumlarını temizle
+    roomObj.dmSessions = roomObj.dmSessions.filter(
+      (s) =>
+        this.isClientOnlineInRoom(roomObj.id, s.initiatorClientId) &&
+        this.isClientOnlineInRoom(roomObj.id, s.recipientClientId)
+    );
+    return (
+      roomObj.dmSessions.find(
+        (s) =>
+          s.initiatorClientId === clientId || s.recipientClientId === clientId
+      ) || null
+    );
+  }
+
+  cleanupClientDmInRoom(roomId, clientId, leavingUsername) {
+    if (!roomId || !clientId) return;
+    if (this.isClientOnlineInRoom(roomId, clientId)) return;
+    const roomObj = this.rooms.get(roomId);
+    if (!roomObj || !roomObj.dmSessions) return;
+
+    const idx = roomObj.dmSessions.findIndex(
+      (s) =>
+        s.initiatorClientId === clientId || s.recipientClientId === clientId
+    );
+    if (idx === -1) return;
+
+    const session = roomObj.dmSessions[idx];
+    roomObj.dmSessions.splice(idx, 1);
+    const peerClientId =
+      session.initiatorClientId === clientId
+        ? session.recipientClientId
+        : session.initiatorClientId;
+
+    if (roomObj.whispers) {
+      roomObj.whispers = roomObj.whispers.filter(
+        (w) =>
+          !(
+            (w.senderClientId === clientId &&
+              w.whisperToClientId === peerClientId) ||
+            (w.senderClientId === peerClientId &&
+              w.whisperToClientId === clientId)
+          )
+      );
+    }
+
+    this.emitToClientsInRoom(roomId, [peerClientId], 'dm_state', {
+      session: null,
+      notice: {
+        type: 'peer_left',
+        byClientId: clientId,
+        byName: leavingUsername,
+      },
+    });
+  }
+
   /**
    * Belirli bir kullanıcıya menzili içindeki aktif Tek Yönlü Kanalları gönderir
    */
@@ -256,6 +334,8 @@ export class MitemasukaHub {
         const oldRoomId = user.roomId;
         user.roomId = null;
 
+        this.cleanupClientDmInRoom(oldRoomId, user.clientId, user.username);
+
         if (!user.ghostMode) {
           this.broadcastToRoom(oldRoomId, 'system_message', {
             id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -304,12 +384,14 @@ export class MitemasukaHub {
         radius: targetRadius,
         messages: [],
         whispers: [],
+        dmSessions: [],
         createdAt: Date.now(),
       });
     }
 
     user.roomId = matchedRoomId;
     const roomObj = this.rooms.get(matchedRoomId);
+    const activeDmSession = this.getUserDmSession(roomObj, user.clientId);
 
     this.sendEvent(user.ws, 'joined_room', {
       roomId: matchedRoomId,
@@ -317,14 +399,9 @@ export class MitemasukaHub {
       username: user.username,
       userId: user.id,
       history: roomObj ? roomObj.messages : [],
-      // Sadece bu kullanıcının taraf olduğu özel konuşmalar
-      whispers: roomObj
-        ? (roomObj.whispers || []).filter(
-            (w) =>
-              w.senderClientId === user.clientId ||
-              w.whisperToClientId === user.clientId
-          )
-        : [],
+      dmSession: activeDmSession,
+      // Sadece bu kullanıcının aktif özel konuşmasındaki mesajlar
+      whispers: activeDmSession ? activeDmSession.messages : [],
     });
 
     if (!user.ghostMode) {
@@ -506,6 +583,22 @@ export class MitemasukaHub {
 
       this.sendQuotaAndIdentity(user);
       if (user.roomId) {
+        const roomObj = this.rooms.get(user.roomId);
+        const dmSession = this.getUserDmSession(roomObj, user.clientId);
+        if (dmSession) {
+          if (dmSession.initiatorClientId === user.clientId) {
+            dmSession.initiatorName = cleanName;
+          }
+          if (dmSession.recipientClientId === user.clientId) {
+            dmSession.recipientName = cleanName;
+          }
+          this.emitToClientsInRoom(
+            user.roomId,
+            [dmSession.initiatorClientId, dmSession.recipientClientId],
+            'dm_state',
+            { session: dmSession }
+          );
+        }
         this.broadcastRoomUsers(user.roomId);
         this.broadcastToRoom(user.roomId, 'system_message', {
           id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -535,8 +628,91 @@ export class MitemasukaHub {
       return;
     }
 
+    // 1'e 1 Özel Görüşme İsteğini Kabul Etme
+    if (event === 'dm_accept') {
+      if (!user.roomId) return;
+      const roomObj = this.rooms.get(user.roomId);
+      if (!roomObj) return;
+      const session = this.getUserDmSession(roomObj, user.clientId);
+      if (!session || session.recipientClientId !== user.clientId) return;
+
+      session.status = 'accepted';
+      this.getOrCreateProfile(session.initiatorClientId).whisperContacts.add(
+        user.clientId
+      );
+      this.getOrCreateProfile(user.clientId).whisperContacts.add(
+        session.initiatorClientId
+      );
+
+      this.emitToClientsInRoom(
+        user.roomId,
+        [session.initiatorClientId, session.recipientClientId],
+        'dm_state',
+        {
+          session,
+          notice: {
+            type: 'accepted',
+            byClientId: user.clientId,
+            byName: user.username,
+          },
+        }
+      );
+      return;
+    }
+
+    // 1'e 1 Özel Görüşmeyi Reddetme veya Sonlandırma
+    if (event === 'dm_close') {
+      if (!user.roomId) return;
+      const roomObj = this.rooms.get(user.roomId);
+      if (!roomObj || !roomObj.dmSessions) return;
+      const session = this.getUserDmSession(roomObj, user.clientId);
+      if (!session) return;
+
+      const isRejected =
+        session.status === 'pending' &&
+        session.recipientClientId === user.clientId &&
+        data?.reason === 'rejected';
+
+      const peerClientId =
+        session.initiatorClientId === user.clientId
+          ? session.recipientClientId
+          : session.initiatorClientId;
+
+      roomObj.dmSessions = roomObj.dmSessions.filter(
+        (s) => s.id !== session.id
+      );
+      if (roomObj.whispers) {
+        roomObj.whispers = roomObj.whispers.filter(
+          (w) =>
+            !(
+              (w.senderClientId === user.clientId &&
+                w.whisperToClientId === peerClientId) ||
+              (w.senderClientId === peerClientId &&
+                w.whisperToClientId === user.clientId)
+            )
+        );
+      }
+
+      this.emitToClientsInRoom(
+        user.roomId,
+        [user.clientId, peerClientId],
+        'dm_state',
+        {
+          session: null,
+          notice: {
+            type: isRejected ? 'rejected' : 'closed',
+            byClientId: user.clientId,
+            byName: user.username,
+          },
+        }
+      );
+      return;
+    }
+
     if (event === 'send_message') {
       if (!user.roomId) return;
+      const roomObj = this.rooms.get(user.roomId);
+      if (!roomObj) return;
       const prof = this.getOrCreateProfile(user.clientId);
 
       if (prof.isBanned) {
@@ -557,32 +733,29 @@ export class MitemasukaHub {
       if (!text) return;
 
       // Özel mesaj (fısıltı): alıcı kalıcı clientId ile belirlenir
+      const isWhisperIntent = Boolean(
+        data?.isWhisper || data?.whisperToClientId || data?.whisperToId
+      );
       let whisperToId = null;
       let whisperToName = null;
       let whisperToClientId = null;
       let whisperTargets = [];
-      const reqToClientId = data?.whisperToClientId
-        ? String(data.whisperToClientId)
-        : null;
-      const reqToSocketId = data?.whisperToId || null;
+      let dmSession = null;
 
-      if (reqToClientId || reqToSocketId) {
+      if (isWhisperIntent) {
+        const reqToClientId = data?.whisperToClientId
+          ? String(data.whisperToClientId)
+          : null;
+        const reqToSocketId = data?.whisperToId || null;
+
         whisperToClientId =
           reqToClientId ||
           (this.users.get(reqToSocketId)
             ? this.users.get(reqToSocketId).clientId
             : null);
-        if (!whisperToClientId || whisperToClientId === user.clientId) return;
 
-        // Konuşmayı başlatmak Plus ister; kendisine yazılmış birine cevap vermek ücretsizdir
-        if (!user.isPlus && !prof.whisperContacts.has(whisperToClientId)) {
-          this.sendEvent(user.ws, 'paywall_trigger', {
-            reason: 'whisper_locked',
-            message:
-              'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.',
-          });
-          return;
-        }
+        // Özel mesaj niyeti varsa asla genel odaya düşmemeli
+        if (!whisperToClientId || whisperToClientId === user.clientId) return;
 
         // Alıcı aynı odada ve çevrimiçi olmalı (sunucu tarafı doğrulama)
         for (const [, u] of this.users.entries()) {
@@ -600,6 +773,80 @@ export class MitemasukaHub {
         }
         whisperToId = whisperTargets[0].id;
         whisperToName = whisperTargets[0].username;
+
+        // Tek-eşli (1'e 1) özel görüşme ve Kabul/Red kontrolü
+        dmSession = this.getUserDmSession(roomObj, user.clientId);
+        if (dmSession) {
+          const myPeerId =
+            dmSession.initiatorClientId === user.clientId
+              ? dmSession.recipientClientId
+              : dmSession.initiatorClientId;
+          const myPeerName =
+            dmSession.initiatorClientId === user.clientId
+              ? dmSession.recipientName
+              : dmSession.initiatorName;
+
+          if (myPeerId !== whisperToClientId) {
+            this.sendEvent(user.ws, 'dm_error', {
+              reason: 'self_busy',
+              peerClientId: myPeerId,
+              peerName: myPeerName,
+            });
+            return;
+          }
+
+          if (dmSession.status === 'pending') {
+            if (dmSession.initiatorClientId === user.clientId) {
+              this.sendEvent(user.ws, 'dm_error', {
+                reason: 'waiting_accept',
+                peerClientId: myPeerId,
+                peerName: myPeerName,
+              });
+              return;
+            } else {
+              // Alıcı doğrudan cevap yazarsa otomatik kabul etmiş sayılır
+              dmSession.status = 'accepted';
+            }
+          }
+        } else {
+          // Karşı tarafın başka biriyle aktif veya bekleyen özel görüşmesi var mı?
+          const targetSession = this.getUserDmSession(
+            roomObj,
+            whisperToClientId
+          );
+          if (targetSession) {
+            this.sendEvent(user.ws, 'dm_error', {
+              reason: 'target_busy',
+              peerClientId: whisperToClientId,
+              peerName: whisperToName,
+            });
+            return;
+          }
+
+          // Konuşmayı başlatmak Plus ister; kendisine yazılmış birine cevap vermek ücretsizdir
+          if (!user.isPlus && !prof.whisperContacts.has(whisperToClientId)) {
+            this.sendEvent(user.ws, 'paywall_trigger', {
+              reason: 'whisper_locked',
+              message:
+                'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.',
+            });
+            return;
+          }
+
+          dmSession = {
+            id: `dm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            roomId: user.roomId,
+            initiatorClientId: user.clientId,
+            initiatorName: user.username,
+            recipientClientId: whisperToClientId,
+            recipientName: whisperToName,
+            status: 'pending',
+            messages: [],
+            createdAt: Date.now(),
+          };
+          if (!roomObj.dmSessions) roomObj.dmSessions = [];
+          roomObj.dmSessions.push(dmSession);
+        }
       }
 
       if (!user.isPlus) {
@@ -632,39 +879,41 @@ export class MitemasukaHub {
         timestamp: new Date().toISOString(),
       };
 
-      if (whisperToClientId) {
+      if (isWhisperIntent && whisperToClientId && dmSession) {
         // Alıcı artık bu kullanıcıya ücretsiz cevap verebilir
         this.getOrCreateProfile(whisperToClientId).whisperContacts.add(
           user.clientId
         );
 
-        const roomObj = this.rooms.get(user.roomId);
-        if (roomObj) {
-          if (!roomObj.whispers) roomObj.whispers = [];
-          roomObj.whispers.push(messageData);
-          if (roomObj.whispers.length > MAX_ROOM_WHISPERS) {
-            roomObj.whispers.shift();
-          }
+        dmSession.messages.push(messageData);
+        if (dmSession.messages.length > MAX_ROOM_WHISPERS) {
+          dmSession.messages.shift();
         }
 
-        // Her iki tarafın tüm açık sekmelerine ilet
-        for (const [, u] of this.users.entries()) {
-          if (
-            u.roomId === user.roomId &&
-            (u.clientId === user.clientId || u.clientId === whisperToClientId)
-          ) {
-            this.sendEvent(u.ws, 'chat_message', messageData);
-          }
+        if (!roomObj.whispers) roomObj.whispers = [];
+        roomObj.whispers.push(messageData);
+        if (roomObj.whispers.length > MAX_ROOM_WHISPERS) {
+          roomObj.whispers.shift();
         }
+
+        this.emitToClientsInRoom(
+          user.roomId,
+          [user.clientId, whisperToClientId],
+          'chat_message',
+          messageData
+        );
+        this.emitToClientsInRoom(
+          user.roomId,
+          [user.clientId, whisperToClientId],
+          'dm_state',
+          { session: dmSession }
+        );
         return;
       }
 
-      const roomObj = this.rooms.get(user.roomId);
-      if (roomObj) {
-        roomObj.messages.push(messageData);
-        if (roomObj.messages.length > MAX_ROOM_HISTORY) {
-          roomObj.messages.shift();
-        }
+      roomObj.messages.push(messageData);
+      if (roomObj.messages.length > MAX_ROOM_HISTORY) {
+        roomObj.messages.shift();
       }
 
       this.broadcastToRoom(user.roomId, 'chat_message', messageData);
@@ -834,6 +1083,7 @@ export class MitemasukaHub {
         const oldRoomId = u.roomId;
         this.users.delete(socketId);
         if (oldRoomId) {
+          this.cleanupClientDmInRoom(oldRoomId, u.clientId, u.username);
           if (!u.ghostMode) {
             this.broadcastToRoom(oldRoomId, 'system_message', {
               id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

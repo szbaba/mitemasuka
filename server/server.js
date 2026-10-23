@@ -186,6 +186,83 @@ function broadcastRoomUsers(roomId) {
   });
 }
 
+function isClientOnlineInRoom(roomId, clientId) {
+  if (!roomId || !clientId) return false;
+  for (const [, u] of users.entries()) {
+    if (u.roomId === roomId && u.clientId === clientId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function emitToClientsInRoom(roomId, clientIds, event, payload) {
+  if (!roomId) return;
+  const set = new Set(clientIds);
+  for (const [, u] of users.entries()) {
+    if (u.roomId === roomId && set.has(u.clientId)) {
+      io.to(u.id).emit(event, payload);
+    }
+  }
+}
+
+function getUserDmSession(roomObj, clientId) {
+  if (!roomObj || !clientId) return null;
+  if (!roomObj.dmSessions) roomObj.dmSessions = [];
+  roomObj.dmSessions = roomObj.dmSessions.filter(
+    (s) =>
+      isClientOnlineInRoom(roomObj.id, s.initiatorClientId) &&
+      isClientOnlineInRoom(roomObj.id, s.recipientClientId)
+  );
+  return (
+    roomObj.dmSessions.find(
+      (s) =>
+        s.initiatorClientId === clientId || s.recipientClientId === clientId
+    ) || null
+  );
+}
+
+function cleanupClientDmInRoom(roomId, clientId, leavingUsername) {
+  if (!roomId || !clientId) return;
+  if (isClientOnlineInRoom(roomId, clientId)) return;
+  const roomObj = rooms.get(roomId);
+  if (!roomObj || !roomObj.dmSessions) return;
+
+  const idx = roomObj.dmSessions.findIndex(
+    (s) =>
+      s.initiatorClientId === clientId || s.recipientClientId === clientId
+  );
+  if (idx === -1) return;
+
+  const session = roomObj.dmSessions[idx];
+  roomObj.dmSessions.splice(idx, 1);
+  const peerClientId =
+    session.initiatorClientId === clientId
+      ? session.recipientClientId
+      : session.initiatorClientId;
+
+  if (roomObj.whispers) {
+    roomObj.whispers = roomObj.whispers.filter(
+      (w) =>
+        !(
+          (w.senderClientId === clientId &&
+            w.whisperToClientId === peerClientId) ||
+          (w.senderClientId === peerClientId &&
+            w.whisperToClientId === clientId)
+        )
+    );
+  }
+
+  emitToClientsInRoom(roomId, [peerClientId], 'dm_state', {
+    session: null,
+    notice: {
+      type: 'peer_left',
+      byClientId: clientId,
+      byName: leavingUsername,
+    },
+  });
+}
+
 function sendQuotaAndIdentity(socket, user) {
   const prof = getOrCreateProfile(user.clientId);
   socket.emit('identity', {
@@ -250,6 +327,8 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
       socket.leave(oldRoomId);
       user.roomId = null;
 
+      cleanupClientDmInRoom(oldRoomId, user.clientId, user.username);
+
       // Hayalet modda değilse ayrılma mesajı bas
       if (!user.ghostMode) {
         io.to(oldRoomId).emit('system_message', {
@@ -300,6 +379,7 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
       radius: targetRadius,
       messages: [],
       whispers: [],
+      dmSessions: [],
       createdAt: Date.now(),
     });
   }
@@ -308,6 +388,7 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
   socket.join(matchedRoomId);
 
   const roomObj = rooms.get(matchedRoomId);
+  const activeDmSession = getUserDmSession(roomObj, user.clientId);
 
   socket.emit('joined_room', {
     roomId: matchedRoomId,
@@ -315,14 +396,9 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
     username: user.username,
     userId: user.id,
     history: roomObj ? roomObj.messages : [],
-    // Sadece bu kullanıcının taraf olduğu özel konuşmalar
-    whispers: roomObj
-      ? (roomObj.whispers || []).filter(
-          (w) =>
-            w.senderClientId === user.clientId ||
-            w.whisperToClientId === user.clientId
-        )
-      : [],
+    dmSession: activeDmSession,
+    // Sadece bu kullanıcının aktif özel konuşmasındaki mesajlar
+    whispers: activeDmSession ? activeDmSession.messages : [],
   });
 
   if (!user.ghostMode) {
@@ -424,6 +500,22 @@ io.on('connection', (socket) => {
 
     sendQuotaAndIdentity(socket, user);
     if (user.roomId) {
+      const roomObj = rooms.get(user.roomId);
+      const dmSession = getUserDmSession(roomObj, user.clientId);
+      if (dmSession) {
+        if (dmSession.initiatorClientId === user.clientId) {
+          dmSession.initiatorName = cleanName;
+        }
+        if (dmSession.recipientClientId === user.clientId) {
+          dmSession.recipientName = cleanName;
+        }
+        emitToClientsInRoom(
+          user.roomId,
+          [dmSession.initiatorClientId, dmSession.recipientClientId],
+          'dm_state',
+          { session: dmSession }
+        );
+      }
       broadcastRoomUsers(user.roomId);
       io.to(user.roomId).emit('system_message', {
         id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -456,10 +548,91 @@ io.on('connection', (socket) => {
     if (user.roomId) broadcastRoomUsers(user.roomId);
   });
 
+  // 1'e 1 Özel Görüşme İsteğini Kabul Etme
+  socket.on('dm_accept', () => {
+    const user = users.get(socket.id);
+    if (!user || !user.roomId) return;
+    const roomObj = rooms.get(user.roomId);
+    if (!roomObj) return;
+    const session = getUserDmSession(roomObj, user.clientId);
+    if (!session || session.recipientClientId !== user.clientId) return;
+
+    session.status = 'accepted';
+    getOrCreateProfile(session.initiatorClientId).whisperContacts.add(
+      user.clientId
+    );
+    getOrCreateProfile(user.clientId).whisperContacts.add(
+      session.initiatorClientId
+    );
+
+    emitToClientsInRoom(
+      user.roomId,
+      [session.initiatorClientId, session.recipientClientId],
+      'dm_state',
+      {
+        session,
+        notice: {
+          type: 'accepted',
+          byClientId: user.clientId,
+          byName: user.username,
+        },
+      }
+    );
+  });
+
+  // 1'e 1 Özel Görüşmeyi Reddetme veya Sonlandırma
+  socket.on('dm_close', (data) => {
+    const user = users.get(socket.id);
+    if (!user || !user.roomId) return;
+    const roomObj = rooms.get(user.roomId);
+    if (!roomObj || !roomObj.dmSessions) return;
+    const session = getUserDmSession(roomObj, user.clientId);
+    if (!session) return;
+
+    const isRejected =
+      session.status === 'pending' &&
+      session.recipientClientId === user.clientId &&
+      data?.reason === 'rejected';
+
+    const peerClientId =
+      session.initiatorClientId === user.clientId
+        ? session.recipientClientId
+        : session.initiatorClientId;
+
+    roomObj.dmSessions = roomObj.dmSessions.filter((s) => s.id !== session.id);
+    if (roomObj.whispers) {
+      roomObj.whispers = roomObj.whispers.filter(
+        (w) =>
+          !(
+            (w.senderClientId === user.clientId &&
+              w.whisperToClientId === peerClientId) ||
+            (w.senderClientId === peerClientId &&
+              w.whisperToClientId === clientId)
+          )
+      );
+    }
+
+    emitToClientsInRoom(
+      user.roomId,
+      [user.clientId, peerClientId],
+      'dm_state',
+      {
+        session: null,
+        notice: {
+          type: isRejected ? 'rejected' : 'closed',
+          byClientId: user.clientId,
+          byName: user.username,
+        },
+      }
+    );
+  });
+
   // Mesaj Gönderme (Grup Mesajı veya 1'e 1 Özel Fısıltı)
   socket.on('send_message', (payload) => {
     const user = users.get(socket.id);
     if (!user || !user.roomId) return;
+    const roomObj = rooms.get(user.roomId);
+    if (!roomObj) return;
 
     const prof = getOrCreateProfile(user.clientId);
 
@@ -485,30 +658,25 @@ io.on('connection', (socket) => {
     if (!text) return;
 
     // 3. 1'e 1 Özel Fısıltı (DM): alıcı kalıcı clientId ile belirlenir
+    const isWhisperIntent = Boolean(
+      payload?.isWhisper || payload?.whisperToClientId || payload?.whisperToId
+    );
     let whisperToId = null;
     let whisperToName = null;
     let whisperToClientId = null;
     const whisperTargets = [];
-    const reqToClientId = payload?.whisperToClientId
-      ? String(payload.whisperToClientId)
-      : null;
-    const reqToSocketId = payload?.whisperToId || null;
+    let dmSession = null;
 
-    if (reqToClientId || reqToSocketId) {
+    if (isWhisperIntent) {
+      const reqToClientId = payload?.whisperToClientId
+        ? String(payload.whisperToClientId)
+        : null;
+      const reqToSocketId = payload?.whisperToId || null;
+
       whisperToClientId =
         reqToClientId ||
         (users.get(reqToSocketId) ? users.get(reqToSocketId).clientId : null);
       if (!whisperToClientId || whisperToClientId === user.clientId) return;
-
-      // Konuşmayı başlatmak Plus ister; kendisine yazılmış birine cevap vermek ücretsizdir
-      if (!user.isPlus && !prof.whisperContacts.has(whisperToClientId)) {
-        socket.emit('paywall_trigger', {
-          reason: 'whisper_locked',
-          message:
-            'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için MiniTemas Plus gereklidir.',
-        });
-        return;
-      }
 
       // Alıcı aynı odada ve çevrimiçi olmalı (sunucu tarafı doğrulama)
       for (const [, u] of users.entries()) {
@@ -526,6 +694,75 @@ io.on('connection', (socket) => {
       }
       whisperToId = whisperTargets[0].id;
       whisperToName = whisperTargets[0].username;
+
+      // Tek-eşli (1'e 1) özel görüşme ve Kabul/Red kontrolü
+      dmSession = getUserDmSession(roomObj, user.clientId);
+      if (dmSession) {
+        const myPeerId =
+          dmSession.initiatorClientId === user.clientId
+            ? dmSession.recipientClientId
+            : dmSession.initiatorClientId;
+        const myPeerName =
+          dmSession.initiatorClientId === user.clientId
+            ? dmSession.recipientName
+            : dmSession.initiatorName;
+
+        if (myPeerId !== whisperToClientId) {
+          socket.emit('dm_error', {
+            reason: 'self_busy',
+            peerClientId: myPeerId,
+            peerName: myPeerName,
+          });
+          return;
+        }
+
+        if (dmSession.status === 'pending') {
+          if (dmSession.initiatorClientId === user.clientId) {
+            socket.emit('dm_error', {
+              reason: 'waiting_accept',
+              peerClientId: myPeerId,
+              peerName: myPeerName,
+            });
+            return;
+          } else {
+            dmSession.status = 'accepted';
+          }
+        }
+      } else {
+        const targetSession = getUserDmSession(roomObj, whisperToClientId);
+        if (targetSession) {
+          socket.emit('dm_error', {
+            reason: 'target_busy',
+            peerClientId: whisperToClientId,
+            peerName: whisperToName,
+          });
+          return;
+        }
+
+        // Konuşmayı başlatmak Plus ister; kendisine yazılmış birine cevap vermek ücretsizdir
+        if (!user.isPlus && !prof.whisperContacts.has(whisperToClientId)) {
+          socket.emit('paywall_trigger', {
+            reason: 'whisper_locked',
+            message:
+              'Odadaki bir kişiye 1-e-1 özel fısıltı (DM) göndermek için MiniTemas Plus gereklidir.',
+          });
+          return;
+        }
+
+        dmSession = {
+          id: `dm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          roomId: user.roomId,
+          initiatorClientId: user.clientId,
+          initiatorName: user.username,
+          recipientClientId: whisperToClientId,
+          recipientName: whisperToName,
+          status: 'pending',
+          messages: [],
+          createdAt: Date.now(),
+        };
+        if (!roomObj.dmSessions) roomObj.dmSessions = [];
+        roomObj.dmSessions.push(dmSession);
+      }
     }
 
     // 4. Günlük Mesaj Kotası Kontrolü (Model B -> Ücretsiz kullanıcılar günde 15 mesaj)
@@ -560,35 +797,38 @@ io.on('connection', (socket) => {
     };
 
     // Özel Fısıltıysa sadece iki tarafın tüm açık sekmelerine ilet
-    if (whisperToClientId) {
+    if (isWhisperIntent && whisperToClientId && dmSession) {
       // Alıcı artık bu kullanıcıya ücretsiz cevap verebilir
       getOrCreateProfile(whisperToClientId).whisperContacts.add(user.clientId);
 
-      const wRoom = rooms.get(user.roomId);
-      if (wRoom) {
-        if (!wRoom.whispers) wRoom.whispers = [];
-        wRoom.whispers.push(messageData);
-        if (wRoom.whispers.length > MAX_ROOM_WHISPERS) wRoom.whispers.shift();
+      dmSession.messages.push(messageData);
+      if (dmSession.messages.length > MAX_ROOM_WHISPERS) {
+        dmSession.messages.shift();
       }
 
-      for (const [, u] of users.entries()) {
-        if (
-          u.roomId === user.roomId &&
-          (u.clientId === user.clientId || u.clientId === whisperToClientId)
-        ) {
-          io.to(u.id).emit('chat_message', messageData);
-        }
-      }
+      if (!roomObj.whispers) roomObj.whispers = [];
+      roomObj.whispers.push(messageData);
+      if (roomObj.whispers.length > MAX_ROOM_WHISPERS) roomObj.whispers.shift();
+
+      emitToClientsInRoom(
+        user.roomId,
+        [user.clientId, whisperToClientId],
+        'chat_message',
+        messageData
+      );
+      emitToClientsInRoom(
+        user.roomId,
+        [user.clientId, whisperToClientId],
+        'dm_state',
+        { session: dmSession }
+      );
       return;
     }
 
     // Ortak grup mesajıysa oda geçmişine kaydet (son 25 mesaj) ve odaya yayınla
-    const roomObj = rooms.get(user.roomId);
-    if (roomObj) {
-      roomObj.messages.push(messageData);
-      if (roomObj.messages.length > MAX_ROOM_HISTORY) {
-        roomObj.messages.shift();
-      }
+    roomObj.messages.push(messageData);
+    if (roomObj.messages.length > MAX_ROOM_HISTORY) {
+      roomObj.messages.shift();
     }
 
     io.to(user.roomId).emit('chat_message', messageData);
@@ -711,6 +951,7 @@ io.on('connection', (socket) => {
       users.delete(socket.id);
 
       if (oldRoomId) {
+        cleanupClientDmInRoom(oldRoomId, user.clientId, user.username);
         if (!user.ghostMode) {
           io.to(oldRoomId).emit('system_message', {
             id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

@@ -90,6 +90,18 @@ interface ChatItem {
   timestamp: string;
 }
 
+interface DmSession {
+  id: string;
+  roomId: string;
+  initiatorClientId: string;
+  initiatorName: string;
+  recipientClientId: string;
+  recipientName: string;
+  status: 'pending' | 'accepted';
+  messages: ChatItem[];
+  createdAt: number;
+}
+
 interface BroadcastMessage {
   id: string;
   text: string;
@@ -390,14 +402,19 @@ export default function MitemasukaPage() {
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
-  // Özel konuşmalar (fısıltılar) oda akışından ayrı tutulur
+  // Özel konuşmalar (fısıltılar) oda akışından ayrı tutulur (aynı anda en fazla 1 kişiyle)
   const [whispers, setWhispers] = useState<ChatItem[]>([]);
-  const [activeView, setActiveView] = useState<'room' | 'dm'>('room');
-  const [dmPeer, setDmPeer] = useState<{
+  const [dmSession, setDmSession] = useState<DmSession | null>(null);
+  const [dmDraftPeer, setDmDraftPeer] = useState<{
     clientId: string;
     username: string;
   } | null>(null);
-  const [unreadByPeer, setUnreadByPeer] = useState<Record<string, number>>({});
+  const [dmNotice, setDmNotice] = useState<{
+    type: 'rejected' | 'closed' | 'peer_left' | 'self_busy' | 'target_busy';
+    peerName: string;
+  } | null>(null);
+  const [activeView, setActiveView] = useState<'room' | 'dm'>('room');
+  const [unreadDmCount, setUnreadDmCount] = useState<number>(0);
   const dmViewRef = useRef<{ view: 'room' | 'dm'; peer: string | null }>({
     view: 'room',
     peer: null,
@@ -661,14 +678,18 @@ export default function MitemasukaPage() {
           } else if (event === 'joined_room') {
             setRoomId(data.roomId);
             setSelectedRadius(data.radius);
-            // Yeni odaya girişte özel konuşmalar sunucudan yeniden yüklenir
+            const sess: DmSession | null = data.dmSession || null;
+            setDmSession(sess);
+            setDmDraftPeer(null);
+            setDmNotice(null);
             setWhispers(
-              Array.isArray(data.whispers)
+              sess && Array.isArray(sess.messages)
+                ? sess.messages.map((m: ChatItem) => ({ ...m, kind: 'chat' }))
+                : Array.isArray(data.whispers)
                 ? data.whispers.map((m: ChatItem) => ({ ...m, kind: 'chat' }))
                 : []
             );
-            setUnreadByPeer({});
-            setDmPeer(null);
+            setUnreadDmCount(0);
             setActiveView('room');
             if (Array.isArray(data.history) && data.history.length > 0) {
               setMessages(
@@ -708,6 +729,44 @@ export default function MitemasukaPage() {
                 String(data.text || '')
               );
             }
+          } else if (event === 'dm_state') {
+            const sess: DmSession | null = data?.session || null;
+            setDmSession(sess);
+            if (sess) {
+              setDmDraftPeer(null);
+              setDmNotice(null);
+              setWhispers(
+                Array.isArray(sess.messages)
+                  ? sess.messages.map((m: ChatItem) => ({ ...m, kind: 'chat' }))
+                  : []
+              );
+            } else {
+              setWhispers([]);
+              setUnreadDmCount(0);
+            }
+            if (data?.notice) {
+              const { type, byClientId, byName } = data.notice;
+              if (type === 'rejected' && byClientId !== storedClientId) {
+                setDmDraftPeer(null);
+                setDmNotice({ type: 'rejected', peerName: byName || '' });
+              } else if (type === 'closed' && byClientId !== storedClientId) {
+                setDmDraftPeer(null);
+                setDmNotice({ type: 'closed', peerName: byName || '' });
+              } else if (type === 'peer_left') {
+                setDmDraftPeer(null);
+                setDmNotice({ type: 'peer_left', peerName: byName || '' });
+              } else if (type === 'accepted') {
+                setDmNotice(null);
+              }
+            }
+          } else if (event === 'dm_error') {
+            const { reason, peerName } = data || {};
+            if (reason === 'self_busy') {
+              setDmNotice({ type: 'self_busy', peerName: peerName || '' });
+            } else if (reason === 'target_busy') {
+              setDmDraftPeer(null);
+              setDmNotice({ type: 'target_busy', peerName: peerName || '' });
+            }
           } else if (
             event === 'chat_message' &&
             (data.whisperToClientId || data.whisperToId)
@@ -721,17 +780,11 @@ export default function MitemasukaPage() {
               data.senderId === myIdRef.current ||
               data.senderClientId === storedClientId;
             if (!fromMe) {
-              const peer = data.senderClientId as string;
               const v = dmViewRef.current;
               const viewing =
-                v.view === 'dm' &&
-                v.peer === peer &&
-                document.visibilityState === 'visible';
+                v.view === 'dm' && document.visibilityState === 'visible';
               if (!viewing) {
-                setUnreadByPeer((prev) => ({
-                  ...prev,
-                  [peer]: (prev[peer] || 0) + 1,
-                }));
+                setUnreadDmCount((prev) => prev + 1);
               }
               if (whisperNotifRef.current) {
                 playTinSound('whisper');
@@ -742,18 +795,11 @@ export default function MitemasukaPage() {
               }
             }
           } else if (event === 'whisper_failed') {
-            // Alıcı odadan ayrıldı: konuşmada bilgi notu göster
-            setWhispers((prev) => [
-              ...prev,
-              {
-                id: `wf_${Date.now()}`,
-                kind: 'system',
-                systemType: 'info',
-                text: String(data.targetName || ''),
-                whisperToClientId: data.targetClientId,
-                timestamp: new Date().toISOString(),
-              },
-            ]);
+            setDmDraftPeer(null);
+            setDmNotice({
+              type: 'peer_left',
+              peerName: String(data?.targetName || ''),
+            });
           } else if (event === 'chat_message') {
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.id)) return prev;
@@ -908,14 +954,27 @@ export default function MitemasukaPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typingUsers]);
 
+  // Aktif özel konuşmadaki karşı taraf (sunucu oturumu veya yeni seçilmiş taslak kişi)
+  const dmPeer = React.useMemo(() => {
+    if (dmSession) {
+      const isInit = dmSession.initiatorClientId === myClientId;
+      return {
+        clientId: isInit
+          ? dmSession.recipientClientId
+          : dmSession.initiatorClientId,
+        username: isInit
+          ? dmSession.recipientName
+          : dmSession.initiatorName,
+      };
+    }
+    return dmDraftPeer;
+  }, [dmSession, dmDraftPeer, myClientId]);
+
   // Özel konuşma görünümü senkronu (ws olay işleyicisi bu ref'i okur)
   useEffect(() => {
     dmViewRef.current = { view: activeView, peer: dmPeer?.clientId || null };
-    if (activeView === 'dm' && dmPeer) {
-      const peerId = dmPeer.clientId;
-      setUnreadByPeer((prev) =>
-        prev[peerId] ? { ...prev, [peerId]: 0 } : prev
-      );
+    if (activeView === 'dm') {
+      setUnreadDmCount(0);
     }
   }, [activeView, dmPeer, whispers]);
 
@@ -923,34 +982,7 @@ export default function MitemasukaPage() {
     if (activeView === 'dm') {
       dmEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [whispers, activeView, dmPeer]);
-
-  // Konuşma listesi: kişi başına son mesaj, en yeni üstte
-  const dmThreads = React.useMemo(() => {
-    const map = new Map<
-      string,
-      { peerClientId: string; peerName: string; last: ChatItem }
-    >();
-    whispers.forEach((w) => {
-      if (w.kind !== 'chat') return;
-      const mine = w.senderClientId === myClientId;
-      const peer = mine ? w.whisperToClientId : w.senderClientId;
-      if (!peer) return;
-      map.set(peer, {
-        peerClientId: peer,
-        peerName: (mine ? w.whisperToName : w.senderName) || '',
-        last: w,
-      });
-    });
-    return Array.from(map.values()).sort((a, b) =>
-      b.last.timestamp.localeCompare(a.last.timestamp)
-    );
-  }, [whispers, myClientId]);
-
-  const totalUnreadDm = Object.values(unreadByPeer).reduce(
-    (sum, n) => sum + n,
-    0
-  );
+  }, [whispers, activeView, dmPeer, dmSession]);
 
   const dmThreadMessages = React.useMemo(() => {
     if (!dmPeer) return [];
@@ -967,22 +999,73 @@ export default function MitemasukaPage() {
     ? roomUsers.some((u) => u.clientId === dmPeer.clientId)
     : false;
 
-  // Özel konuşma başlat / aç. Başlatmak Plus ister, gelen mesaja cevap ücretsizdir.
+  const isDmWaitingMyAccept = Boolean(
+    dmSession &&
+      dmSession.status === 'pending' &&
+      dmSession.recipientClientId === myClientId
+  );
+
+  const isDmWaitingPeerAccept = Boolean(
+    dmSession &&
+      dmSession.status === 'pending' &&
+      dmSession.initiatorClientId === myClientId
+  );
+
+  const handleAcceptDm = () => {
+    if (!socket || !dmSession) return;
+    socket.emit('dm_accept');
+  };
+
+  const handleCloseDm = (reason: 'rejected' | 'closed' = 'closed') => {
+    if (dmSession && socket) {
+      socket.emit('dm_close', { reason });
+    }
+    setDmSession(null);
+    setDmDraftPeer(null);
+    setWhispers([]);
+    setUnreadDmCount(0);
+  };
+
+  // Özel konuşma başlat / aç. Aynı anda sadece 1 kişiyle özel konuşma yapılabilir.
   const openDm = (peerClientId?: string, peerName?: string) => {
     if (!peerClientId || !peerName || peerClientId === myClientId) return;
-    const hasIncoming = whispers.some(
-      (w) => w.kind === 'chat' && w.senderClientId === peerClientId
-    );
-    if (!isPlus && !hasIncoming) {
+
+    if (dmSession) {
+      const currentPeerId =
+        dmSession.initiatorClientId === myClientId
+          ? dmSession.recipientClientId
+          : dmSession.initiatorClientId;
+      const currentPeerName =
+        dmSession.initiatorClientId === myClientId
+          ? dmSession.recipientName
+          : dmSession.initiatorName;
+
+      if (currentPeerId !== peerClientId) {
+        setDmNotice({ type: 'self_busy', peerName: currentPeerName });
+        setActiveView('dm');
+        setShowMembersDrawer(false);
+        return;
+      }
+
+      setDmNotice(null);
+      setActiveView('dm');
+      setUnreadDmCount(0);
+      setShowMembersDrawer(false);
+      return;
+    }
+
+    if (!isPlus) {
       setPaywallReason(
         `${peerName} adlı kişiye 1'e 1 Özel Fısıltı (DM) göndermek için Mitemasuka Plus gereklidir.`
       );
       setShowPlusModal(true);
       return;
     }
-    setDmPeer({ clientId: peerClientId, username: peerName });
+
+    setDmNotice(null);
+    setDmDraftPeer({ clientId: peerClientId, username: peerName });
     setActiveView('dm');
-    setUnreadByPeer((prev) => ({ ...prev, [peerClientId]: 0 }));
+    setUnreadDmCount(0);
     setShowMembersDrawer(false);
   };
 
@@ -1071,13 +1154,31 @@ export default function MitemasukaPage() {
     }
 
     const inDm = activeView === 'dm';
-    if (inDm && (!dmPeer || !dmPeerOnline)) return;
+    if (inDm) {
+      if (!dmPeer || !dmPeerOnline || isDmWaitingPeerAccept) return;
+      const targetUser = roomUsers.find((u) => u.clientId === dmPeer.clientId);
+      if (!targetUser && !dmPeer.clientId) return;
+
+      socket.emit('send_message', {
+        text: inputText.trim(),
+        replyTo: null,
+        isWhisper: true,
+        whisperToId: targetUser?.id || null,
+        whisperToClientId: dmPeer.clientId,
+        whisperToName: dmPeer.username,
+      });
+      socket.emit('typing', false);
+      setInputText('');
+      setReplyingTo(null);
+      return;
+    }
 
     socket.emit('send_message', {
       text: inputText.trim(),
-      replyTo: inDm ? null : replyingTo,
-      whisperToClientId: inDm ? dmPeer!.clientId : null,
-      whisperToName: inDm ? dmPeer!.username : null,
+      replyTo: replyingTo,
+      isWhisper: false,
+      whisperToClientId: null,
+      whisperToName: null,
     });
     socket.emit('typing', false);
     setInputText('');
@@ -2096,38 +2197,35 @@ export default function MitemasukaPage() {
             CHAT_BACKGROUNDS[0].className
           }`}
         >
-          {/* ODA / ÖZEL SEKMELERİ */}
-          <div className="sticky top-0 z-10 -mx-4 -mt-3 px-4 pt-3 pb-2 bg-white/80 dark:bg-neutral-900/80 backdrop-blur border-b border-slate-200/70 dark:border-neutral-800">
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-neutral-800 max-w-xs mx-auto">
-              <button
-                type="button"
-                onClick={() => setActiveView('room')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  activeView === 'room'
-                    ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-2xs'
-                    : 'text-slate-500 dark:text-neutral-400'
-                }`}
-              >
-                {t.tabRoom}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('dm')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
-                  activeView === 'dm'
-                    ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-2xs'
-                    : 'text-slate-500 dark:text-neutral-400'
-                }`}
-              >
-                <MessageSquareLock className="w-3.5 h-3.5" />
-                <span>{t.tabPrivate}</span>
-                {totalUnreadDm > 0 && (
-                  <span className="min-w-4 h-4 px-1 rounded-full bg-[#1A81E5] text-white text-[10px] font-bold flex items-center justify-center">
-                    {totalUnreadDm}
-                  </span>
-                )}
-              </button>
-            </div>
+          {/* SADE "ÖZEL" SEKME KULAĞI (Sağ kenarda küçük kulakçık, "Oda" yazısı yok) */}
+          <div className="sticky top-0 z-10 flex justify-end -mr-4 -mt-1 pointer-events-none">
+            <button
+              type="button"
+              onClick={() =>
+                setActiveView((prev) => (prev === 'dm' ? 'room' : 'dm'))
+              }
+              className={`pointer-events-auto flex items-center gap-1.5 pl-3 pr-3.5 py-1.5 rounded-l-full border border-r-0 text-xs font-semibold shadow-sm transition ${
+                activeView === 'dm'
+                  ? 'bg-[#1A81E5] text-white border-[#1A81E5]'
+                  : unreadDmCount > 0 || isDmWaitingMyAccept
+                  ? 'bg-violet-600 text-white border-violet-600 animate-pulse'
+                  : 'bg-white/95 dark:bg-neutral-800/95 text-slate-700 dark:text-neutral-200 border-slate-200 dark:border-neutral-700 hover:bg-slate-50 dark:hover:bg-neutral-700'
+              }`}
+            >
+              <MessageSquareLock className="w-3.5 h-3.5" />
+              <span>{t.tabPrivate}</span>
+              {(unreadDmCount > 0 || isDmWaitingMyAccept) && (
+                <span
+                  className={`min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                    activeView === 'dm'
+                      ? 'bg-white text-[#1A81E5]'
+                      : 'bg-white text-violet-700'
+                  }`}
+                >
+                  {unreadDmCount || 1}
+                </span>
+              )}
+            </button>
           </div>
 
           {activeView === 'room' ? (
@@ -2433,84 +2531,77 @@ export default function MitemasukaPage() {
           </>
           ) : (
             <div className="space-y-2.5 pt-1">
+              {dmNotice && (
+                <div className="flex items-center justify-between gap-2 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-xs px-3.5 py-2.5 rounded-2xl">
+                  <span>
+                    {dmNotice.type === 'rejected'
+                      ? t.dmRejectedNotice.replace('{name}', dmNotice.peerName)
+                      : dmNotice.type === 'closed'
+                      ? t.dmClosedNotice.replace('{name}', dmNotice.peerName)
+                      : dmNotice.type === 'self_busy'
+                      ? t.dmSelfBusy.replace('{name}', dmNotice.peerName)
+                      : dmNotice.type === 'target_busy'
+                      ? t.dmTargetBusy.replace('{name}', dmNotice.peerName)
+                      : t.dmPeerLeft.replace('{name}', dmNotice.peerName)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDmNotice(null)}
+                    className="p-1 text-amber-700 dark:text-amber-300 hover:opacity-80"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {!dmPeer ? (
-                dmThreads.length === 0 ? (
-                  <div className="flex flex-col items-center text-center gap-2 py-14 text-slate-500 dark:text-neutral-400">
-                    <MessageSquareLock className="w-9 h-9 opacity-60" />
-                    <div className="text-sm font-semibold text-slate-700 dark:text-neutral-200">
-                      {t.dmEmptyTitle}
-                    </div>
-                    <p className="text-xs max-w-xs">{t.dmEmptyHint}</p>
+                <div className="flex flex-col items-center text-center gap-2 py-14 text-slate-500 dark:text-neutral-400">
+                  <MessageSquareLock className="w-9 h-9 opacity-60" />
+                  <div className="text-sm font-semibold text-slate-700 dark:text-neutral-200">
+                    {t.dmEmptyTitle}
                   </div>
-                ) : (
-                  dmThreads.map((th) => {
-                    const online = roomUsers.some(
-                      (u) => u.clientId === th.peerClientId
-                    );
-                    const unread = unreadByPeer[th.peerClientId] || 0;
-                    return (
-                      <button
-                        key={th.peerClientId}
-                        type="button"
-                        onClick={() => openDm(th.peerClientId, th.peerName)}
-                        className="w-full flex items-center gap-3 bg-white dark:bg-neutral-800 border border-slate-200/90 dark:border-neutral-700 rounded-2xl px-3.5 py-3 text-left hover:bg-slate-50 dark:hover:bg-neutral-700/60 transition"
-                      >
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                            online ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-neutral-600'
-                          }`}
-                        />
-                        <span className="flex-1 min-w-0">
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-bold truncate text-slate-900 dark:text-white">
-                              {th.peerName}
-                            </span>
-                            <span className="text-[10px] text-slate-400 shrink-0">
-                              {formatTime(th.last.timestamp)}
-                            </span>
-                          </span>
-                          <span className="block text-xs text-slate-500 dark:text-neutral-400 truncate">
-                            {th.last.senderClientId === myClientId
-                              ? `${t.you}: `
-                              : ''}
-                            {th.last.text}
-                          </span>
-                        </span>
-                        {unread > 0 && (
-                          <span className="min-w-5 h-5 px-1.5 rounded-full bg-[#1A81E5] text-white text-[11px] font-bold flex items-center justify-center shrink-0">
-                            {unread}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })
-                )
+                  <p className="text-xs max-w-xs">{t.dmEmptyHint}</p>
+                </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-2 bg-white/90 dark:bg-neutral-800/90 border border-slate-200/90 dark:border-neutral-700 rounded-2xl px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2 bg-white/90 dark:bg-neutral-800/90 border border-slate-200/90 dark:border-neutral-700 rounded-2xl px-2.5 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => setActiveView('room')}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-700 text-slate-600 dark:text-neutral-300"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                      </button>
+                      <span className="font-bold text-sm truncate text-slate-900 dark:text-white">
+                        {dmPeer.username}
+                      </span>
+                      <span
+                        className={`text-[11px] font-medium shrink-0 ${
+                          dmPeerOnline
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        ● {dmPeerOnline ? t.dmOnline : t.dmOffline}
+                      </span>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={() => setDmPeer(null)}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-neutral-700 text-slate-600 dark:text-neutral-300"
+                      onClick={() => handleCloseDm('closed')}
+                      className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[11px] font-semibold transition shrink-0"
                     >
-                      <ArrowLeft className="w-4 h-4" />
+                      ✕ {dmSession ? t.dmEndBtn : t.dmCancelBtn}
                     </button>
-                    <span className="font-bold text-sm truncate text-slate-900 dark:text-white">
-                      {dmPeer.username}
-                    </span>
-                    <span
-                      className={`text-[11px] font-medium shrink-0 ${
-                        dmPeerOnline
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      ● {dmPeerOnline ? t.dmOnline : t.dmOffline}
-                    </span>
                   </div>
+
                   <p className="text-center text-[11px] text-slate-400 dark:text-neutral-500 px-4">
-                    {t.dmEphemeral}
+                    {!dmSession
+                      ? t.dmFirstMsgHint.replace('{name}', dmPeer.username)
+                      : t.dmEphemeral}
                   </p>
+
                   {dmThreadMessages.map((w) => {
                     if (w.kind === 'system') {
                       return (
@@ -2554,6 +2645,39 @@ export default function MitemasukaPage() {
                       </div>
                     );
                   })}
+
+                  {/* KABUL / RED ONAY KARTI (Alıcı için) */}
+                  {isDmWaitingMyAccept && (
+                    <div className="bg-white dark:bg-neutral-800 border border-violet-200 dark:border-violet-500/40 rounded-2xl p-4 text-center space-y-3 shadow-sm">
+                      <div className="text-xs font-semibold text-slate-800 dark:text-neutral-100">
+                        🔒 {t.dmRequestFrom.replace('{name}', dmPeer.username)}
+                      </div>
+                      <div className="flex items-center justify-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={handleAcceptDm}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
+                        >
+                          ✓ {t.dmAcceptBtn}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCloseDm('rejected')}
+                          className="px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition"
+                        >
+                          ✕ {t.dmRejectBtn}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ONAY BEKLENİYOR BİLGİSİ (Gönderen için) */}
+                  {isDmWaitingPeerAccept && (
+                    <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/30 rounded-2xl px-4 py-3 text-center text-xs text-amber-800 dark:text-amber-300">
+                      ⏳ {t.dmWaitingAccept.replace('{name}', dmPeer.username)}
+                    </div>
+                  )}
+
                   {!dmPeerOnline && (
                     <div className="text-center text-xs text-amber-700 dark:text-amber-300">
                       {t.dmPeerLeft.replace('{name}', dmPeer.username)}
@@ -2600,14 +2724,20 @@ export default function MitemasukaPage() {
               !effectiveCoords ||
               !isConnected ||
               isBanned ||
-              (activeView === 'dm' && (!dmPeer || !dmPeerOnline))
+              (activeView === 'dm' &&
+                (!dmPeer ||
+                  !dmPeerOnline ||
+                  isDmWaitingPeerAccept ||
+                  isDmWaitingMyAccept))
             }
             placeholder={
               isBanned
                 ? t.inputBanned
                 : activeView === 'dm'
                 ? dmPeer
-                  ? `${dmPeer.username} — ${t.inputWhisperPlaceholder}`
+                  ? isDmWaitingPeerAccept
+                    ? t.dmWaitingAccept.replace('{name}', dmPeer.username)
+                    : `${dmPeer.username} — ${t.inputWhisperPlaceholder}`
                   : t.dmPickHint
                 : effectiveCoords
                 ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} — ${t.inputRoomPlaceholder}`
@@ -2623,7 +2753,11 @@ export default function MitemasukaPage() {
               !effectiveCoords ||
               !isConnected ||
               isBanned ||
-              (activeView === 'dm' && (!dmPeer || !dmPeerOnline))
+              (activeView === 'dm' &&
+                (!dmPeer ||
+                  !dmPeerOnline ||
+                  isDmWaitingPeerAccept ||
+                  isDmWaitingMyAccept))
             }
             className="w-10 h-10 rounded-xl bg-[#1A81E5] hover:bg-[#156fc7] disabled:opacity-40 text-white flex items-center justify-center transition shrink-0 shadow-sm shadow-[#1A81E5]/20"
           >
