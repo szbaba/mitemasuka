@@ -993,14 +993,14 @@ export default function MitemasukaPage() {
             className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1"
             onClick={() => setShowMembersDrawer((prev) => !prev)}
           >
-            <div className="relative flex items-center justify-center w-9 h-9 shrink-0">
+            <div className="relative flex items-center justify-center w-16 h-16 shrink-0 -my-1.5">
               <img
                 src="/logo-karga.png"
                 alt="Mitemasuka"
-                className="w-9 h-9 object-contain dark:invert"
+                className="w-16 h-16 object-contain"
               />
               <span
-                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${
+                className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
                   isConnected ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
@@ -1590,11 +1590,11 @@ export default function MitemasukaPage() {
       {/* KONUM BEKLENİYOR (Corsecure Hero Stili) */}
       {!effectiveCoords ? (
         <div className="relative flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-5 bg-white dark:bg-slate-900">
-          <div className="w-16 h-16 flex items-center justify-center shrink-0">
+          <div className="w-28 h-28 flex items-center justify-center shrink-0">
             <img
               src="/logo-karga.png"
               alt="Mitemasuka"
-              className="w-16 h-16 object-contain dark:invert"
+              className="w-28 h-28 object-contain"
             />
           </div>
 

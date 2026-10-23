@@ -31,8 +31,9 @@ export const metadata: Metadata = {
     title: 'Mitemasuka',
   },
   icons: {
-    icon: '/icon.svg',
-    apple: '/icon.svg',
+    icon: '/icon-512.png?v=2',
+    shortcut: '/apple-touch-icon.png?v=2',
+    apple: '/apple-touch-icon.png?v=2',
   },
 };
 
