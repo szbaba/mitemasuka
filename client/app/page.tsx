@@ -36,6 +36,14 @@ import {
   Moon,
   Palette,
 } from 'lucide-react';
+import {
+  LangCode,
+  SUPPORTED_LANGS,
+  detectBrowserLang,
+  translateTextFree,
+  localizeSystemMessage,
+  UI_TEXT,
+} from './i18n';
 
 interface WsClient {
   emit: (event: string, data?: unknown) => void;
@@ -357,7 +365,14 @@ export default function MitemasukaPage() {
   const [showRulesModal, setShowRulesModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları + Tema (Corsecure Light/Dark)
+  // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları + Tema (Corsecure Light/Dark) + Çoklu Dil
+  const [uiLang, setUiLang] = useState<LangCode>('tr');
+  const [autoTranslate, setAutoTranslate] = useState<boolean>(true);
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [hiddenTranslationIds, setHiddenTranslationIds] = useState<
+    Record<string, boolean>
+  >({});
+  const checkedTranslationKeysRef = useRef<Set<string>>(new Set());
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [chatBg, setChatBg] = useState<ChatBgId>('ice');
   const [simOffsetMeters, setSimOffsetMeters] = useState<number>(0);
@@ -406,6 +421,21 @@ export default function MitemasukaPage() {
       localStorage.setItem('mitemasuka_chat_bg', chatBg);
     } catch {}
   }, [chatBg]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mitemasuka_lang', uiLang);
+    } catch {}
+    if (uiLang === 'tr') setActiveStoryLang('tr');
+    else if (uiLang === 'ja') setActiveStoryLang('jp');
+    else setActiveStoryLang('en');
+  }, [uiLang]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mitemasuka_auto_translate', String(autoTranslate));
+    } catch {}
+  }, [autoTranslate]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -493,6 +523,12 @@ export default function MitemasukaPage() {
         CHAT_BACKGROUNDS.some((b) => b.id === savedBg)
       ) {
         setChatBg(savedBg as ChatBgId);
+      }
+      const detected = detectBrowserLang();
+      setUiLang(detected);
+      const savedAutoTr = localStorage.getItem('mitemasuka_auto_translate');
+      if (savedAutoTr !== null) {
+        setAutoTranslate(savedAutoTr === 'true');
       }
     } catch {}
   }, []);
@@ -782,6 +818,59 @@ export default function MitemasukaPage() {
     channelEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeChannel?.messages]);
 
+  // 🌐 Herkese Ücretsiz Otomatik Mesaj ve Kanal Altyazı Çevirisi
+  useEffect(() => {
+    if (!autoTranslate) return;
+
+    messages.forEach((m) => {
+      if (m.kind !== 'chat') return;
+      const isMine =
+        m.senderId === myId ||
+        (m.senderClientId && m.senderClientId === myClientId);
+      if (isMine) return;
+
+      const key = `${m.id}_${uiLang}`;
+      if (checkedTranslationKeysRef.current.has(key)) return;
+      checkedTranslationKeysRef.current.add(key);
+
+      translateTextFree(m.text, uiLang).then((res) => {
+        if (res?.translated) {
+          setTranslations((prev) => ({ ...prev, [key]: res.translated }));
+        }
+      });
+    });
+
+    if (activeChannel) {
+      activeChannel.messages.forEach((bm) => {
+        const key = `ch_${bm.id}_${uiLang}`;
+        if (checkedTranslationKeysRef.current.has(key)) return;
+        checkedTranslationKeysRef.current.add(key);
+
+        translateTextFree(bm.text, uiLang).then((res) => {
+          if (res?.translated) {
+            setTranslations((prev) => ({ ...prev, [key]: res.translated }));
+          }
+        });
+      });
+    }
+  }, [messages, activeChannel, uiLang, autoTranslate, myId, myClientId]);
+
+  const handleToggleOrTranslateMessage = async (msgId: string, text: string) => {
+    const key = `${msgId}_${uiLang}`;
+    if (translations[key]) {
+      setHiddenTranslationIds((prev) => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
+      return;
+    }
+    const res = await translateTextFree(text, uiLang);
+    if (res?.translated) {
+      setTranslations((prev) => ({ ...prev, [key]: res.translated }));
+      setHiddenTranslationIds((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
   const handleSelectRadius = (opt: {
     value: number;
     label: string;
@@ -892,7 +981,8 @@ export default function MitemasukaPage() {
     }
 
     const recognition = new SpeechRec();
-    recognition.lang = 'tr-TR';
+    recognition.lang =
+      SUPPORTED_LANGS.find((l) => l.code === uiLang)?.speechLang || 'tr-TR';
     recognition.continuous = true;
     recognition.interimResults = true;
 
@@ -984,6 +1074,7 @@ export default function MitemasukaPage() {
       ? window.location.origin
       : 'https://mitemasuka.com';
   const activeTypingNames = Object.values(typingUsers);
+  const t = UI_TEXT[uiLang];
 
   return (
     <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-slate-50 dark:bg-neutral-900 text-slate-900 dark:text-neutral-100 border-x border-slate-200/80 dark:border-neutral-800 shadow-2xl overflow-hidden transition-colors duration-200">
@@ -1141,13 +1232,13 @@ export default function MitemasukaPage() {
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold uppercase tracking-wider shrink-0 animate-pulse">
-                    <Radio className="w-3 h-3" /> CANLI KANAL
+                    <Radio className="w-3 h-3" /> {t.liveChannelBadge}
                   </span>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-rose-900 dark:text-amber-200 truncate">
                       {ch.title}{' '}
                       <span className="text-[11px] font-normal text-rose-600 dark:text-rose-200/80">
-                        ({ch.ownerName} • {ch.listenerCount || 1} dinleyici)
+                        ({ch.ownerName} • {ch.listenerCount || 1} {t.listeners})
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-700 dark:text-white/90 truncate">
@@ -1156,7 +1247,7 @@ export default function MitemasukaPage() {
                   </div>
                 </div>
                 <span className="text-[11px] font-bold text-rose-700 dark:text-amber-300 bg-white dark:bg-neutral-900/70 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-amber-400/30 shrink-0 group-hover:bg-rose-600 group-hover:text-white transition shadow-2xs">
-                  Dinle &rarr;
+                  {t.listenBtn}
                 </span>
               </div>
             );
@@ -1177,17 +1268,17 @@ export default function MitemasukaPage() {
               }}
               className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold hover:bg-blue-100/70 dark:hover:bg-blue-900/50 transition"
             >
-              <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                {isPlus ? 'Mitemasuka Plus Aktif' : "Mitemasuka Plus'a Geç"}
+              <span className="flex items-center gap-2 text-left">
+                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span>{isPlus ? t.plusActive : t.upgradeToPlus}</span>
               </span>
               <span className="flex flex-col items-end shrink-0">
                 <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
-                  {isPlus ? 'VIP' : 'Yükselt'}
+                  {isPlus ? 'VIP' : t.upgradeBadge}
                 </span>
                 {!isPlus && (
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
-                    Şimdilik Ücretsiz
+                    {t.freeForNow}
                   </span>
                 )}
               </span>
@@ -1203,20 +1294,73 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-2 text-left">
                 <Megaphone className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                <span>Kanal Kur (Tek Yönlü Seslen)</span>
+                <span>{t.createChannelMenu}</span>
               </span>
               <span className="flex flex-col items-end shrink-0">
                 <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-bold">
                   PRO
                 </span>
                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
-                  Şimdilik Ücretsiz
+                  {t.freeForNow}
                 </span>
               </span>
             </button>
           </div>
 
+          {/* 🌍 DİL SEÇİCİ (8 Küresel Dil) */}
+          <div className="px-3.5 py-2.5 space-y-2">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-neutral-300">
+              <span className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-[#1A81E5]" />
+                <span>{t.appLanguage}</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal">
+                {SUPPORTED_LANGS.find((l) => l.code === uiLang)?.label}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {SUPPORTED_LANGS.map((lng) => {
+                const active = uiLang === lng.code;
+                return (
+                  <button
+                    key={lng.code}
+                    type="button"
+                    onClick={() => setUiLang(lng.code)}
+                    className={`py-1.5 rounded-xl border text-xs font-semibold transition ${
+                      active
+                        ? 'border-[#1A81E5] bg-[#1A81E5] text-white shadow-2xs'
+                        : 'border-slate-200 dark:border-neutral-700 bg-slate-50/70 dark:bg-neutral-900/60 text-slate-700 dark:text-neutral-300 hover:border-slate-300'
+                    }`}
+                    title={lng.label}
+                  >
+                    {lng.short}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="py-1 text-slate-700 dark:text-neutral-200">
+            {/* HERKESE ÜCRETSİZ OTOMATİK MESAJ ÇEVİRİSİ */}
+            <button
+              onClick={() => setAutoTranslate((prev) => !prev)}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
+            >
+              <span className="flex items-center gap-3">
+                <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="font-medium">{t.autoTranslateMenu}</span>
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  autoTranslate
+                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
+                }`}
+              >
+                {autoTranslate ? t.on : t.off}
+              </span>
+            </button>
+
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
@@ -1227,13 +1371,10 @@ export default function MitemasukaPage() {
               <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <div>
                 <div className="font-semibold flex items-center gap-1.5 text-slate-900 dark:text-white">
-                  <span>Mitemasuka Nedir?</span>
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400">
-                    見てますか?
-                  </span>
+                  <span>{t.whatIsMitemasuka}</span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-neutral-400">
-                  &ldquo;Beni görüyor musun?&rdquo; hikayesi ve tanıtım
+                  {t.whatIsSub}
                 </div>
               </div>
             </button>
@@ -1248,10 +1389,10 @@ export default function MitemasukaPage() {
               <QrCode className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <div>
                 <div className="font-semibold text-slate-900 dark:text-white">
-                  Yakınındakini Ekle (QR Kod)
+                  {t.addNearbyQr}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-neutral-400">
-                  Çevrendeki kişiler okutup odaya katılsın
+                  {t.addNearbyQrSub}
                 </div>
               </div>
             </button>
@@ -1273,7 +1414,7 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 <Edit3 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span>Takma Adımı Değiştir</span>
+                <span>{t.changeMyNickname}</span>
               </span>
               {!isPlus && <Lock className="w-3.5 h-3.5 text-amber-500" />}
             </button>
@@ -1283,7 +1424,7 @@ export default function MitemasukaPage() {
                 if (!isPlus) {
                   setShowHamburgerMenu(false);
                   setPaywallReason(
-                    '👻 Hayalet Modu ile odaya girdiğinizde veya çıktığınızda kimseye bildirim gitmez. Sadece Plus üyelere özeldir.'
+                    'Hayalet Modu ile odaya girdiğinizde veya çıktığınızda kimseye bildirim gitmez. Sadece Plus üyelere özeldir.'
                   );
                   setShowPlusModal(true);
                   return;
@@ -1294,7 +1435,7 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 <Ghost className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                <span>Hayalet Modu (Sessiz Giriş)</span>
+                <span>{t.ghostModeMenu}</span>
               </span>
               {!isPlus ? (
                 <Lock className="w-3.5 h-3.5 text-amber-500" />
@@ -1306,7 +1447,7 @@ export default function MitemasukaPage() {
                       : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                   }`}
                 >
-                  {ghostMode ? 'Açık' : 'Kapalı'}
+                  {ghostMode ? t.on : t.off}
                 </span>
               )}
             </button>
@@ -1331,7 +1472,7 @@ export default function MitemasukaPage() {
                 ) : (
                   <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
-                <span>Oda Mesaj Bildirimi</span>
+                <span>{t.roomNotif}</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
@@ -1340,7 +1481,7 @@ export default function MitemasukaPage() {
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
-                {roomNotifEnabled ? 'Açık' : 'Kapalı'}
+                {roomNotifEnabled ? t.on : t.off}
               </span>
             </button>
 
@@ -1364,7 +1505,7 @@ export default function MitemasukaPage() {
                 ) : (
                   <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
-                <span>Özel Fısıltı Bildirimi</span>
+                <span>{t.whisperNotif}</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
@@ -1373,7 +1514,7 @@ export default function MitemasukaPage() {
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
-                {whisperNotifEnabled ? 'Açık' : 'Kapalı'}
+                {whisperNotifEnabled ? t.on : t.off}
               </span>
             </button>
 
@@ -1397,7 +1538,7 @@ export default function MitemasukaPage() {
                 ) : (
                   <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
-                <span>Giriş / Çıkış Uyarısı</span>
+                <span>{t.presenceNotif}</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
@@ -1406,7 +1547,7 @@ export default function MitemasukaPage() {
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
-                {presenceNotifEnabled ? 'Açık' : 'Kapalı'}
+                {presenceNotifEnabled ? t.on : t.off}
               </span>
             </button>
 
@@ -1419,7 +1560,7 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-                <span>Kurallar & Engellenenler</span>
+                <span>{t.rulesAndBlocked}</span>
               </span>
               {Object.keys(blockedClientIds).length > 0 && (
                 <span className="text-xs bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-full">
@@ -1434,7 +1575,7 @@ export default function MitemasukaPage() {
             <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-neutral-300">
               <span className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span>Sohbet Zemini</span>
+                <span>{t.chatBgTitle}</span>
               </span>
               <span className="text-[10px] text-slate-400 font-normal">
                 {CHAT_BACKGROUNDS.find((b) => b.id === chatBg)?.label}
@@ -1475,9 +1616,9 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 <FlaskConical className="w-4 h-4" />
-                <span>Test Mesafe Simülatörü</span>
+                <span>{t.simToggle}</span>
               </span>
-              <span className="text-xs">{showSimBar ? 'Gizle' : 'Göster'}</span>
+              <span className="text-xs">{showSimBar ? t.hide : t.show}</span>
             </button>
           </div>
         </div>
@@ -1489,7 +1630,7 @@ export default function MitemasukaPage() {
           <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/80 dark:border-neutral-700/80">
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-slate-500 dark:text-neutral-400">
-                Kimliğiniz:
+                {t.yourIdentity}
               </span>
               <span
                 style={{ color: myColor }}
@@ -1519,14 +1660,13 @@ export default function MitemasukaPage() {
               }}
               className="text-[11px] font-semibold text-[#1A81E5] hover:underline shrink-0"
             >
-              Adı Değiştir
+              {t.changeName}
             </button>
           </div>
 
           <div className="flex items-center justify-between text-slate-500 dark:text-neutral-400">
             <span className="font-semibold uppercase tracking-wider text-[11px]">
-              Odadaki Aktif Kişiler ({roomUsers.length}) — Özel fısıltı için
-              isme dokunun
+              {t.activeMembersHeader} ({roomUsers.length}) — {t.clickForWhisper}
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1568,7 +1708,7 @@ export default function MitemasukaPage() {
                     {u.username}
                   </button>
                   {isMe ? (
-                    <span className="text-[11px] text-slate-400">(Sen)</span>
+                    <span className="text-[11px] text-slate-400">{t.you}</span>
                   ) : (
                     <>
                       {dist !== null && (
@@ -1635,6 +1775,28 @@ export default function MitemasukaPage() {
       {/* KONUM BEKLENİYOR (Corsecure Hero Stili) */}
       {!effectiveCoords ? (
         <div className="relative flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-5 bg-white dark:bg-neutral-900">
+          {/* Hızlı Dil Seçici Çubuk */}
+          <div className="flex flex-wrap items-center justify-center gap-1 bg-slate-100 dark:bg-neutral-800 p-1 rounded-2xl border border-slate-200 dark:border-neutral-700">
+            {SUPPORTED_LANGS.map((lng) => {
+              const active = uiLang === lng.code;
+              return (
+                <button
+                  key={lng.code}
+                  type="button"
+                  onClick={() => setUiLang(lng.code)}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition ${
+                    active
+                      ? 'bg-[#1A81E5] text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-neutral-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title={lng.label}
+                >
+                  {lng.short}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="w-28 h-28 flex items-center justify-center shrink-0">
             <img
               src="/logo-karga.png"
@@ -1649,26 +1811,23 @@ export default function MitemasukaPage() {
               <span className="text-blue-700 dark:text-blue-400">suka</span>
             </h2>
             <p className="text-xs font-medium text-blue-700 dark:text-blue-400">
-              Beni Görüyor Musun?
+              {t.doYouSeeMe}
             </p>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-neutral-300 max-w-md leading-relaxed">
-              100 metre çevrendeki gerçek insanlarla aynı odaya bağlanmak için
-              aşağıdaki butona dokunarak konum izni verin.
+              {t.heroDesc}
             </p>
           </div>
 
           <button
             onClick={startLocationTracking}
             disabled={isRequestingGeo}
-            className="w-full max-w-xs py-3.5 px-6 bg-blue-700 hover:bg-blue-800 active:scale-[0.99] text-white font-bold rounded-2xl text-sm transition shadow-md shadow-blue-700/20 flex items-center justify-center gap-2"
+            className="w-full max-w-xs py-3.5 px-6 bg-[#1A81E5] hover:bg-[#156fc7] active:scale-[0.99] text-white font-bold rounded-2xl text-sm transition shadow-md shadow-[#1A81E5]/20 flex items-center justify-center gap-2"
           >
             <RefreshCw
               className={`w-4 h-4 ${isRequestingGeo ? 'animate-spin' : ''}`}
             />
             <span>
-              {isRequestingGeo
-                ? 'Konum Alınıyor...'
-                : 'Konum İzni Ver ve Odaya Gir'}
+              {isRequestingGeo ? t.gettingLocation : t.allowLocationBtn}
             </span>
           </button>
 
@@ -1722,7 +1881,7 @@ export default function MitemasukaPage() {
             onClick={() => setShowStoryModal(true)}
             className="px-4 py-2.5 bg-white dark:bg-neutral-800 hover:bg-slate-50 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 border border-slate-200 dark:border-neutral-700 font-medium rounded-xl text-xs transition shadow-2xs"
           >
-            Mitemasuka Nedir?
+            {t.whatIsMitemasuka}
           </button>
         </div>
       ) : (
@@ -1738,16 +1897,16 @@ export default function MitemasukaPage() {
         >
           <div className="flex justify-center my-2">
             <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs">
-              <span className="text-blue-700 dark:text-blue-400 font-semibold">
-                Beni görüyor musun?
+              <span className="text-[#1A81E5] font-semibold">
+                {t.doYouSeeMe}
               </span>{' '}
-              — Şu an{' '}
+              — {t.roomBannerPrefix}{' '}
               <strong className="text-slate-900 dark:text-white">
                 {selectedRadius >= 1000
                   ? `${selectedRadius / 1000} km`
-                  : `${selectedRadius} metre`}
+                  : `${selectedRadius} ${t.meters}`}
               </strong>{' '}
-              çapındaki herkes bu odada birbirini görür ve anlık mesajlaşır.
+              {t.roomBannerSuffix}
             </div>
           </div>
 
@@ -1765,7 +1924,7 @@ export default function MitemasukaPage() {
                   <span
                     className={`text-xs px-3 py-1 rounded-full border shadow-2xs font-medium ${badgeStyle}`}
                   >
-                    {item.text}
+                    {localizeSystemMessage(item.text, uiLang)}
                   </span>
                 </div>
               );
@@ -1812,10 +1971,10 @@ export default function MitemasukaPage() {
                     <div className="flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 mb-1 pb-1 border-b border-violet-200 dark:border-violet-500/30">
                       <MessageSquareLock className="w-3 h-3" />
                       <span>
-                        Özel Fısıltı:{' '}
+                        {t.privateWhisper}{' '}
                         {isMine
-                          ? `Sen -> ${item.whisperToName}`
-                          : `${item.senderName} -> Sana`}
+                          ? `${t.youTo} ${item.whisperToName}`
+                          : `${item.senderName} ${t.toYou}`}
                       </span>
                     </div>
                   )}
@@ -1898,9 +2057,19 @@ export default function MitemasukaPage() {
                   )}
 
                   <div className="flex items-end justify-between gap-2">
-                    <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                      {item.text}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                        {item.text}
+                      </p>
+                      {!isMine &&
+                        translations[`${item.id}_${uiLang}`] &&
+                        !hiddenTranslationIds[`${item.id}_${uiLang}`] && (
+                          <p className="mt-1 pt-1 border-t border-slate-200/70 dark:border-neutral-700/70 text-xs text-[#1A81E5] dark:text-blue-300 whitespace-pre-wrap break-words flex items-start gap-1">
+                            <Globe className="w-3 h-3 shrink-0 translate-y-0.5 opacity-80" />
+                            <span>{translations[`${item.id}_${uiLang}`]}</span>
+                          </p>
+                        )}
+                    </div>
                     <span
                       className={`text-[10px] shrink-0 select-none translate-y-0.5 ${
                         isMine
@@ -1947,23 +2116,43 @@ export default function MitemasukaPage() {
                       })}
                     </div>
 
-                    <button
-                      onClick={() =>
-                        setReplyingTo({
-                          id: item.id,
-                          senderName: item.senderName || 'Kullanıcı',
-                          text: item.text,
-                        })
-                      }
-                      className={`text-[11px] flex items-center gap-1 font-medium ${
-                        isMine
-                          ? 'text-blue-100 hover:text-white'
-                          : 'text-slate-400 hover:text-blue-600 dark:hover:text-white'
-                      }`}
-                    >
-                      <Reply className="w-3 h-3" />
-                      <span>Yanıtla</span>
-                    </button>
+                    <div className="flex items-center gap-2.5">
+                      {!isMine && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggleOrTranslateMessage(item.id, item.text)
+                          }
+                          className="text-[11px] flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
+                        >
+                          <Globe className="w-3 h-3" />
+                          <span>
+                            {translations[`${item.id}_${uiLang}`] &&
+                            !hiddenTranslationIds[`${item.id}_${uiLang}`]
+                              ? t.original
+                              : t.translate}
+                          </span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() =>
+                          setReplyingTo({
+                            id: item.id,
+                            senderName: item.senderName || 'Kullanıcı',
+                            text: item.text,
+                          })
+                        }
+                        className={`text-[11px] flex items-center gap-1 font-medium ${
+                          isMine
+                            ? 'text-blue-100 hover:text-white'
+                            : 'text-slate-400 hover:text-blue-600 dark:hover:text-white'
+                        }`}
+                      >
+                        <Reply className="w-3 h-3" />
+                        <span>{t.reply}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1973,7 +2162,9 @@ export default function MitemasukaPage() {
           {activeTypingNames.length > 0 && (
             <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-medium italic pl-2">
               <span className="animate-pulse">●</span>
-              <span>{activeTypingNames.join(', ')} yazıyor...</span>
+              <span>
+                {activeTypingNames.join(', ')} {t.typing}
+              </span>
             </div>
           )}
 
@@ -1988,8 +2179,7 @@ export default function MitemasukaPage() {
             <div className="flex items-center gap-2 text-violet-700 dark:text-violet-300 font-medium">
               <MessageSquareLock className="w-4 h-4" />
               <span>
-                <strong>{whisperTarget.username}</strong> kişisine 1-e-1 Özel
-                Fısıltı gönderiyorsunuz (Sadece ikiniz görebilirsiniz)
+                <strong>{whisperTarget.username}</strong> {t.whisperBannerPrefix}
               </span>
             </div>
           ) : (
@@ -2028,12 +2218,12 @@ export default function MitemasukaPage() {
             disabled={!effectiveCoords || !isConnected || isBanned}
             placeholder={
               isBanned
-                ? 'Çoklu şikayet nedeniyle susturuldunuz.'
+                ? t.inputBanned
                 : whisperTarget
-                ? `${whisperTarget.username} kişisine özel fısıltı...`
+                ? `${whisperTarget.username} — ${t.inputWhisperPlaceholder}`
                 : effectiveCoords
-                ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} odasına mesaj yazın...`
-                : 'Önce konum izni verin...'
+                ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} — ${t.inputRoomPlaceholder}`
+                : t.inputAllowLocFirst
             }
             className="flex-1 min-w-0 bg-slate-100 dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 placeholder-slate-400 dark:placeholder-neutral-500 border border-slate-200/80 dark:border-neutral-700 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white dark:focus:bg-neutral-800 transition"
           />
@@ -2065,16 +2255,14 @@ export default function MitemasukaPage() {
             }`}
           >
             {isPlus ? (
-              <span>Plus • Sınırsız</span>
+              <span>Plus • {t.unlimited}</span>
             ) : (
               <span>
                 <strong className="text-slate-900 dark:text-white">
                   {remainingQuota}
                 </strong>
-                /{dailyLimit} mesaj •{' '}
-                <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                  Plus
-                </span>
+                /{dailyLimit} {t.messagesUnit} •{' '}
+                <span className="text-[#1A81E5] font-semibold">Plus</span>
               </span>
             )}
           </button>
@@ -2082,9 +2270,9 @@ export default function MitemasukaPage() {
           <button
             type="button"
             onClick={() => setShowStoryModal(true)}
-            className="text-slate-500 dark:text-neutral-400 hover:text-blue-600 dark:hover:text-blue-400 transition truncate ml-2"
+            className="text-slate-500 dark:text-neutral-400 hover:text-[#1A81E5] transition truncate ml-2"
           >
-            Beni görüyor musun?
+            {t.doYouSeeMe}
           </button>
         </div>
       </footer>
@@ -2211,20 +2399,20 @@ export default function MitemasukaPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold uppercase animate-pulse">
-                  🔴 CANLI KANAL
+                  🔴 {t.liveChannel}
                 </span>
                 <span className="text-xs text-rose-600 dark:text-amber-300 font-semibold">
                   {activeChannel.radius >= 1000
                     ? `${activeChannel.radius / 1000} km`
                     : `${activeChannel.radius} m`}{' '}
-                  Menzil • {activeChannel.listenerCount || 1} Dinleyici
+                  {t.range} • {activeChannel.listenerCount || 1} {t.listeners}
                 </span>
               </div>
               <h2 className="text-base font-extrabold text-slate-900 dark:text-white truncate mt-1">
                 📢 {activeChannel.title}
               </h2>
               <p className="text-xs text-slate-500 dark:text-neutral-400">
-                Konuşmacı:{' '}
+                {t.speaker}:{' '}
                 <strong className="text-slate-900 dark:text-white">
                   {activeChannel.ownerName}
                 </strong>
@@ -2242,7 +2430,7 @@ export default function MitemasukaPage() {
                   }}
                   className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-600/20 border border-rose-200 dark:border-rose-500/40 text-rose-600 dark:text-rose-300 text-xs font-bold hover:bg-rose-600 hover:text-white transition"
                 >
-                  Yayını Bitir
+                  {t.endBroadcast}
                 </button>
               )}
               <button
@@ -2256,32 +2444,42 @@ export default function MitemasukaPage() {
 
           {/* Kanal Anons ve Canlı Altyazı Akışı (Büyük Puntolu Okunaklı Görünüm) */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {activeChannel.messages.map((bMsg) => (
-              <div
-                key={bMsg.id}
-                className="bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 rounded-2xl p-4 shadow-sm space-y-1.5"
-              >
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span className="font-bold text-rose-600 dark:text-amber-300 flex items-center gap-1.5">
-                    {bMsg.isLiveVoice ? (
-                      <>
-                        <Mic className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-                        <span>Canlı Sesli Altyazı</span>
-                      </>
-                    ) : (
-                      <>
-                        <Megaphone className="w-3.5 h-3.5 text-blue-600 dark:text-amber-400" />
-                        <span>Yazılı Duyuru</span>
-                      </>
-                    )}
-                  </span>
-                  <span>{formatTime(bMsg.timestamp)}</span>
+            {activeChannel.messages.map((bMsg) => {
+              const chTrKey = `ch_${bMsg.id}_${uiLang}`;
+              const chTranslated = translations[chTrKey];
+              return (
+                <div
+                  key={bMsg.id}
+                  className="bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 rounded-2xl p-4 shadow-sm space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span className="font-bold text-rose-600 dark:text-amber-300 flex items-center gap-1.5">
+                      {bMsg.isLiveVoice ? (
+                        <>
+                          <Mic className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                          <span>Canlı Sesli Altyazı</span>
+                        </>
+                      ) : (
+                        <>
+                          <Megaphone className="w-3.5 h-3.5 text-blue-600 dark:text-amber-400" />
+                          <span>Yazılı Duyuru</span>
+                        </>
+                      )}
+                    </span>
+                    <span>{formatTime(bMsg.timestamp)}</span>
+                  </div>
+                  <p className="text-base sm:text-lg font-medium text-slate-900 dark:text-white leading-relaxed whitespace-pre-wrap">
+                    {bMsg.text}
+                  </p>
+                  {chTranslated && (
+                    <div className="mt-2 pt-2 border-t border-slate-200 dark:border-neutral-700 text-sm sm:text-base font-medium text-blue-600 dark:text-blue-300 leading-relaxed whitespace-pre-wrap flex items-start gap-1.5">
+                      <Globe className="w-4 h-4 shrink-0 mt-1 opacity-80" />
+                      <span>{chTranslated}</span>
+                    </div>
+                  )}
                 </div>
-                <p className="text-base sm:text-lg font-medium text-slate-900 dark:text-white leading-relaxed whitespace-pre-wrap">
-                  {bMsg.text}
-                </p>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Konuşmacı o an konuşurken anlık önizleme */}
             {liveTranscriptPreview && (
@@ -2506,7 +2704,7 @@ export default function MitemasukaPage() {
               onClick={() => setShowStoryModal(false)}
               className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl text-sm transition"
             >
-              Radara Dön
+              {t.backToRadar}
             </button>
           </div>
         </div>
@@ -2532,7 +2730,7 @@ export default function MitemasukaPage() {
                   Mitemasuka Plus
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-neutral-400">
-                  Tüm menzillerde sınırsız tanış
+                  {t.plusSubtitle}
                 </p>
               </div>
             </div>
@@ -2546,58 +2744,45 @@ export default function MitemasukaPage() {
             <div className="space-y-2 text-xs text-slate-700 dark:text-neutral-200 bg-slate-50 dark:bg-neutral-800 p-3.5 rounded-2xl border border-slate-200 dark:border-neutral-700">
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span>
-                  <strong>Sınırsız Mesajlaşma:</strong> Günlük 15 mesaj kotasını
-                  kaldır
-                </span>
+                <span>{t.plusFeature1}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span>
-                  <strong>Tüm Menziller Açık:</strong> 500m, 1 km ve 5 km
-                  odalarına eriş
-                </span>
+                <span>{t.plusFeature2}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span>
-                  <strong>1-e-1 Özel Fısıltı (DM):</strong> Odadaki istediğin
-                  kişiyle özel konuş
-                </span>
+                <span>{t.plusFeature3}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span>
-                  <strong>Özel Rumuz & Hayalet Modu:</strong> Kendi adını seç
-                  veya odaya sessizce gir
-                </span>
+                <span>{t.plusFeature4}</span>
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="text-center text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
-                Tanışma dönemimize özel tüm Plus ayrıcalıkları şimdilik
-                ücretsizdir
+                {t.plusPromoFree}
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
                   {
                     id: 'daily' as const,
-                    title: '24 Saatlik Pas',
-                    price: '29 ₺',
-                    sub: 'Bugünlük',
+                    title: t.dailyPass,
+                    price: t.priceDaily,
+                    sub: t.todayOnly,
                   },
                   {
                     id: 'weekly' as const,
-                    title: 'Haftalık Pas',
-                    price: '79 ₺',
-                    sub: 'En Popüler',
+                    title: t.weeklyPass,
+                    price: t.priceWeekly,
+                    sub: t.mostPopular,
                   },
                   {
                     id: 'monthly' as const,
-                    title: 'Aylık Plus',
-                    price: '149 ₺',
-                    sub: 'En Avantajlı',
+                    title: t.monthlyPlus,
+                    price: t.priceMonthly,
+                    sub: t.bestValue,
                   },
                 ].map((pkg) => (
                   <button
@@ -2620,7 +2805,7 @@ export default function MitemasukaPage() {
                         </span>
                       </span>
                       <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
-                        Ücretsiz
+                        {t.freeLabel}
                       </span>
                     </div>
                     <span className="text-[11px] font-medium">{pkg.title}</span>
@@ -2633,7 +2818,7 @@ export default function MitemasukaPage() {
               onClick={handleActivatePlus}
               className="w-full py-3 rounded-2xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm transition shadow-md shadow-blue-700/20"
             >
-              Seçili Paketi Ücretsiz Aktif Et
+              {t.activateFreeBtn}
             </button>
           </div>
         </div>
@@ -2655,11 +2840,10 @@ export default function MitemasukaPage() {
             </div>
 
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Yakınındakini Odaya Çağır (見てますか?)
+              {t.qrModalTitle} (見てますか?)
             </h3>
             <p className="text-xs text-slate-500 dark:text-neutral-400">
-              Bulunduğun kafede, kampüste veya mekanda yakınındaki kişilere bu
-              QR kodu okut. 100m içindeyseler otomatik olarak bu odaya düşerler!
+              {t.qrModalDesc}
             </p>
 
             <div className="bg-white p-4 rounded-2xl inline-block mx-auto border border-slate-200 shadow-xs">
@@ -2686,11 +2870,11 @@ export default function MitemasukaPage() {
               >
                 {copiedLink ? (
                   <>
-                    <Check className="w-3.5 h-3.5" /> Kopyalandı
+                    <Check className="w-3.5 h-3.5" /> {t.copied}
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5" /> Kopyala
+                    <Copy className="w-3.5 h-3.5" /> {t.copy}
                   </>
                 )}
               </button>
@@ -2716,21 +2900,21 @@ export default function MitemasukaPage() {
 
             <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Edit3 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <span>Takma Adını Değiştir (Plus)</span>
+              <span>{t.nicknameModalTitle}</span>
             </h3>
             <input
               type="text"
               maxLength={20}
               value={nicknameInput}
               onChange={(e) => setNicknameInput(e.target.value)}
-              placeholder="Yeni takma adınız..."
+              placeholder={t.nicknamePlaceholder}
               className="w-full bg-slate-50 dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
             <button
               type="submit"
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition"
             >
-              Kaydet
+              {t.save}
             </button>
           </form>
         </div>
@@ -2749,7 +2933,7 @@ export default function MitemasukaPage() {
 
             <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-rose-500" />
-              <span>Topluluk Kuralları & Engellenenler</span>
+              <span>{t.rulesModalTitle}</span>
             </h3>
 
             <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-2 bg-slate-50 dark:bg-neutral-800 p-3.5 rounded-2xl border border-slate-200 dark:border-neutral-700">
@@ -2771,11 +2955,11 @@ export default function MitemasukaPage() {
 
             <div className="space-y-2">
               <h4 className="text-xs font-semibold uppercase text-slate-500 dark:text-neutral-400">
-                Engellediğiniz Kişiler ({Object.keys(blockedClientIds).length})
+                {t.blockedUsers} ({Object.keys(blockedClientIds).length})
               </h4>
               {Object.keys(blockedClientIds).length === 0 ? (
                 <p className="text-xs text-slate-500 dark:text-neutral-400">
-                  Henüz kimseyi engellemediniz.
+                  {t.noBlockedUsers}
                 </p>
               ) : (
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
@@ -2791,7 +2975,7 @@ export default function MitemasukaPage() {
                         onClick={() => toggleBlockUser(cid, uname)}
                         className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
                       >
-                        Engeli Kaldır
+                        {t.unblock}
                       </button>
                     </div>
                   ))}
