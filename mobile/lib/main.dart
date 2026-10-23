@@ -944,7 +944,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               children: [
                 // 1. ÜST BAR (HEADER)
                 Container(
-                  padding: const EdgeInsets.only(left: 4, right: 12, top: 6, bottom: 6),
+                  padding: const EdgeInsets.only(left: 4, right: 8, top: 6, bottom: 6),
                   decoration: BoxDecoration(
                     color: headerBg,
                     border: Border(bottom: BorderSide(color: borderColor)),
@@ -952,56 +952,92 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Sol: Karga Logo (Yuvarlak beyaz zeminli)
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _activeView = 'room';
-                            _showHamburgerMenu = false;
-                            _showRadiusMenu = false;
-                            _showMembersDrawer = false;
-                          });
-                        },
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 58,
-                              height: 58,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: borderColor),
+                      // Sol: Karga Logo (Yuvarlak beyaz zeminli) + MİTEMASUKA Başlık
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _activeView = 'room';
+                              _showHamburgerMenu = false;
+                              _showRadiusMenu = false;
+                              _showMembersDrawer = false;
+                            });
+                          },
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: borderColor),
+                                    ),
+                                    padding: const EdgeInsets.all(3),
+                                    child: ClipOval(
+                                      child: Image.asset(
+                                        'assets/logo-karga.png',
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 1,
+                                    right: 1,
+                                    child: Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: _isConnected
+                                            ? const Color(0xFF10B981)
+                                            : const Color(0xFFF59E0B),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: headerBg, width: 2),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              padding: const EdgeInsets.all(4),
-                              child: ClipOval(
-                                child: Image.asset(
-                                  'assets/logo-karga.png',
-                                  fit: BoxFit.contain,
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: RichText(
+                                  overflow: TextOverflow.ellipsis,
+                                  text: TextSpan(
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.2,
+                                    ),
+                                    children: [
+                                      TextSpan(
+                                        text: 'mitema',
+                                        style: TextStyle(
+                                          color: isDark
+                                              ? const Color(0xFFCBD5E1)
+                                              : const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                      const TextSpan(
+                                        text: 'suka',
+                                        style: TextStyle(color: kBrandBlue),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                            ),
-                            Positioned(
-                              bottom: 2,
-                              right: 2,
-                              child: Container(
-                                width: 11,
-                                height: 11,
-                                decoration: BoxDecoration(
-                                  color: _isConnected
-                                      ? const Color(0xFF10B981)
-                                      : const Color(0xFFF59E0B),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: headerBg, width: 2),
-                                ),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 4),
 
                       // Sağ Kontrol Butonları: Aktif/Yüklü, Menzil, Gece Modu, Menü
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
@@ -1013,8 +1049,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               });
                             },
                             child: Container(
-                              height: 36,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              height: 34,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
                               decoration: BoxDecoration(
                                 color: pillBg,
                                 borderRadius: BorderRadius.circular(12),
@@ -1024,14 +1060,14 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                 children: [
                                   const Icon(
                                     Icons.people_outline,
-                                    size: 16,
+                                    size: 15,
                                     color: Color(0xFF10B981),
                                   ),
-                                  const SizedBox(width: 5),
+                                  const SizedBox(width: 4),
                                   Text(
                                     '${_roomUsers.length}',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11.5,
                                       fontWeight: FontWeight.bold,
                                       color: textPrimary,
                                     ),
@@ -1039,7 +1075,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   Text(
                                     '/$_nearbyInstalledCount',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 10.5,
                                       color: textSecondary,
                                     ),
                                   ),
@@ -1047,7 +1083,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 4),
 
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
@@ -1059,8 +1095,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               });
                             },
                             child: Container(
-                              height: 36,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              height: 34,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
                               decoration: BoxDecoration(
                                 color: pillBg,
                                 borderRadius: BorderRadius.circular(12),
@@ -1073,29 +1109,29 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                         ? '${_selectedRadius ~/ 1000} km'
                                         : '$_selectedRadius m',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11.5,
                                       fontWeight: FontWeight.w600,
                                       color: textPrimary,
                                     ),
                                   ),
-                                  const SizedBox(width: 2),
+                                  const SizedBox(width: 1),
                                   Icon(
                                     Icons.keyboard_arrow_down,
-                                    size: 16,
+                                    size: 15,
                                     color: textSecondary,
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 4),
 
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
                             onTap: widget.onToggleTheme,
                             child: Container(
-                              width: 36,
-                              height: 36,
+                              width: 34,
+                              height: 34,
                               decoration: BoxDecoration(
                                 color: pillBg,
                                 borderRadius: BorderRadius.circular(12),
@@ -1103,12 +1139,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               child: Icon(
                                 isDark ? Icons.wb_sunny_outlined : Icons.dark_mode_outlined,
-                                size: 18,
+                                size: 17,
                                 color: isDark ? Colors.amber : textPrimary,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 4),
 
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
@@ -1120,8 +1156,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               });
                             },
                             child: Container(
-                              width: 36,
-                              height: 36,
+                              width: 34,
+                              height: 34,
                               decoration: BoxDecoration(
                                 color: pillBg,
                                 borderRadius: BorderRadius.circular(12),
@@ -1129,7 +1165,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               child: Icon(
                                 _showHamburgerMenu ? Icons.close : Icons.menu,
-                                size: 19,
+                                size: 18,
                                 color: textPrimary,
                               ),
                             ),
@@ -1146,30 +1182,35 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      GestureDetector(
-                        onTap: () => setState(() => _activeView = 'room'),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _activeView == 'room'
-                                ? (isDark ? const Color(0xFF262626) : Colors.white)
-                                : (isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF8FAFC)),
-                            borderRadius: const BorderRadius.only(
-                              topRight: Radius.circular(999),
-                              bottomRight: Radius.circular(999),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _activeView = 'room'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _activeView == 'room'
+                                  ? (isDark ? const Color(0xFF262626) : Colors.white)
+                                  : (isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF8FAFC)),
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(999),
+                                bottomRight: Radius.circular(999),
+                              ),
+                              border: Border.all(color: borderColor),
                             ),
-                            border: Border.all(color: borderColor),
-                          ),
-                          child: Text(
-                            '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} · ${_roomUsers.length} aktif · Çevrede $_nearbyInstalledCount kişide yüklü',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: textSecondary,
+                            child: Text(
+                              '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} · ${_roomUsers.length} aktif · Çevrede $_nearbyInstalledCount kişide yüklü',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: textSecondary,
+                              ),
                             ),
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
 
                       GestureDetector(
                         onTap: () {
@@ -1267,7 +1308,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               itemBuilder: (ctx, idx) {
                                 final item = visibleMessages[idx];
                                 if (item.kind == 'system') {
-                                  final isJoin = item.systemType == 'join';
+                                  final isLeave = item.systemType == 'leave';
                                   return Padding(
                                     padding: const EdgeInsets.symmetric(vertical: 4),
                                     child: Center(
@@ -1277,19 +1318,20 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: isJoin
-                                              ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                                              : kCrimsonRed.withValues(alpha: 0.12),
+                                          color: isLeave
+                                              ? kCrimsonRed.withValues(alpha: 0.12)
+                                              : const Color(0xFF10B981).withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(999),
                                         ),
                                         child: Text(
                                           item.text,
+                                          textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w500,
-                                            color: isJoin
-                                                ? const Color(0xFF10B981)
-                                                : kCrimsonRed,
+                                            color: isLeave
+                                                ? kCrimsonRed
+                                                : const Color(0xFF10B981),
                                           ),
                                         ),
                                       ),
@@ -1431,14 +1473,32 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                     ),
                                                   ),
                                                 ),
-                                              Text(
-                                                item.text,
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: isMine ? Colors.white : textPrimary,
-                                                  height: 1.32,
-                                                ),
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      item.text,
+                                                      style: TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: isMine ? Colors.white : textPrimary,
+                                                        height: 1.32,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Text(
+                                                    _formatTime(item.timestamp),
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: isMine
+                                                          ? Colors.white.withValues(alpha: 0.75)
+                                                          : textSecondary,
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                               if (translated != null)
                                                 Padding(
@@ -1454,19 +1514,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                     ),
                                                   ),
                                                 ),
-                                              const SizedBox(height: 2),
-                                              Align(
-                                                alignment: Alignment.bottomRight,
-                                                child: Text(
-                                                  _formatTime(item.timestamp),
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: isMine
-                                                        ? Colors.white.withValues(alpha: 0.75)
-                                                        : textSecondary,
-                                                  ),
-                                                ),
-                                              ),
                                             ],
                                           ),
                                         ),

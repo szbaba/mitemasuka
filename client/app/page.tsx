@@ -1468,9 +1468,9 @@ export default function MitemasukaPage() {
               />
             </div>
 
-            <h1 className="font-bold text-base sm:text-lg leading-tight truncate tracking-tight uppercase">
+            <h1 className="font-bold text-base sm:text-lg leading-tight truncate tracking-tight lowercase">
               <span className="text-slate-400 dark:text-neutral-500">
-                Mitema
+                mitema
               </span>
               <span className="text-[#1A81E5]">suka</span>
             </h1>
