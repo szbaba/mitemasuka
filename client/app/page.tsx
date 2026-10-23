@@ -993,10 +993,14 @@ export default function MitemasukaPage() {
             className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1"
             onClick={() => setShowMembersDrawer((prev) => !prev)}
           >
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/20 shrink-0">
-              <Radar className="w-5 h-5 animate-pulse" />
+            <div className="relative flex items-center justify-center w-9 h-9 shrink-0">
+              <img
+                src="/logo-karga.png"
+                alt="Mitemasuka"
+                className="w-9 h-9 object-contain dark:invert"
+              />
               <span
-                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
+                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${
                   isConnected ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
@@ -1010,9 +1014,6 @@ export default function MitemasukaPage() {
                   </span>
                   <span className="text-blue-700 dark:text-blue-400">suka</span>
                 </h1>
-                <span className="text-[11px] text-blue-700 dark:text-blue-300 font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/80 shrink-0">
-                  見てますか?
-                </span>
                 {showMembersDrawer ? (
                   <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
                 ) : (
@@ -1031,11 +1032,10 @@ export default function MitemasukaPage() {
                 >
                   {myUsername}
                   {isPlus && (
-                    <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-100 dark:bg-amber-400/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-400/40 rounded-md">
-                      ⚡ PLUS
+                    <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-md">
+                      Plus
                     </span>
                   )}
-                  {ghostMode && <span title="Hayalet Mod Aktif">👻</span>}
                 </span>
               </p>
             </div>
@@ -1137,7 +1137,7 @@ export default function MitemasukaPage() {
                   </span>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-rose-900 dark:text-amber-200 truncate">
-                      📢 {ch.title}{' '}
+                      {ch.title}{' '}
                       <span className="text-[11px] font-normal text-rose-600 dark:text-rose-200/80">
                         ({ch.ownerName} • {ch.listenerCount || 1} dinleyici)
                       </span>
@@ -1521,7 +1521,6 @@ export default function MitemasukaPage() {
                     style={{ color: u.color }}
                   >
                     {u.username}
-                    {u.isPlus && <span className="text-[10px]">⚡</span>}
                   </button>
                   {isMe ? (
                     <span className="text-[11px] text-slate-400">(Sen)</span>
@@ -1590,25 +1589,23 @@ export default function MitemasukaPage() {
 
       {/* KONUM BEKLENİYOR (Corsecure Hero Stili) */}
       {!effectiveCoords ? (
-        <div className="relative flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-5 bg-white dark:bg-slate-900 bg-[linear-gradient(to_right,#f1f5f9_1px,transparent_1px),linear-gradient(to_bottom,#f1f5f9_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3.5rem_3.5rem]">
-          <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-lg shadow-blue-600/10 shrink-0">
-            <MapPin className="w-8 h-8 animate-bounce" />
+        <div className="relative flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-5 bg-white dark:bg-slate-900">
+          <div className="w-16 h-16 flex items-center justify-center shrink-0">
+            <img
+              src="/logo-karga.png"
+              alt="Mitemasuka"
+              className="w-16 h-16 object-contain dark:invert"
+            />
           </div>
 
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 font-semibold">
-              <span className="relative flex w-2 h-2">
-                <span className="absolute inline-flex w-full h-full animate-ping rounded-full bg-amber-400 opacity-75" />
-                <span className="relative inline-flex w-2 h-2 rounded-full bg-amber-500" />
-              </span>
-              <span>見てますか?</span>
-              <span>•</span>
-              <span>Beni Görüyor Musun?</span>
-            </div>
             <h2 className="text-3xl font-extrabold tracking-tight uppercase">
               <span className="text-slate-400 dark:text-slate-500">Mitema</span>
               <span className="text-blue-700 dark:text-blue-400">suka</span>
             </h2>
+            <p className="text-xs font-medium text-blue-700 dark:text-blue-400">
+              Beni Görüyor Musun?
+            </p>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-md leading-relaxed">
               100 metre çevrendeki gerçek insanlarla aynı odaya bağlanmak için
               aşağıdaki butona dokunarak konum izni verin.
@@ -1626,7 +1623,7 @@ export default function MitemasukaPage() {
             <span>
               {isRequestingGeo
                 ? 'Konum Alınıyor...'
-                : '📍 Konum İzni Ver ve Odaya Gir'}
+                : 'Konum İzni Ver ve Odaya Gir'}
             </span>
           </button>
 
@@ -1680,7 +1677,7 @@ export default function MitemasukaPage() {
             onClick={() => setShowStoryModal(true)}
             className="px-4 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium rounded-xl text-xs transition shadow-2xs"
           >
-            📖 Mitemasuka Nedir? (見てますか?)
+            Mitemasuka Nedir?
           </button>
         </div>
       ) : (
@@ -1693,8 +1690,8 @@ export default function MitemasukaPage() {
         >
           <div className="flex justify-center my-2">
             <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur border border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs">
-              <span className="text-blue-700 dark:text-blue-400 font-bold">
-                見てますか? (Beni görüyor musun?)
+              <span className="text-blue-700 dark:text-blue-400 font-semibold">
+                Beni görüyor musun?
               </span>{' '}
               — Şu an{' '}
               <strong className="text-slate-900 dark:text-white">
@@ -1720,8 +1717,6 @@ export default function MitemasukaPage() {
                   <span
                     className={`text-xs px-3 py-1 rounded-full border shadow-2xs font-medium ${badgeStyle}`}
                   >
-                    {item.systemType === 'join' && '🟢 '}
-                    {item.systemType === 'leave' && '🔴 '}
                     {item.text}
                   </span>
                 </div>
@@ -1799,11 +1794,6 @@ export default function MitemasukaPage() {
                         style={{ color: item.senderColor || '#2563EB' }}
                       >
                         <span>{item.senderName}</span>
-                        {item.senderIsPlus && (
-                          <span className="text-[10px] text-amber-500 dark:text-amber-300">
-                            ⚡
-                          </span>
-                        )}
                       </button>
 
                       <div className="flex items-center gap-1.5">
@@ -2018,44 +2008,35 @@ export default function MitemasukaPage() {
               setPaywallReason(null);
               setShowPlusModal(true);
             }}
-            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border transition ${
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border transition shrink-0 ${
               isPlus
-                ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-400/40 text-amber-700 dark:text-amber-300 font-semibold'
+                ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium'
                 : remainingQuota <= 3
-                ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-300 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 animate-pulse'
+                ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-300 dark:border-rose-500/40 text-rose-700 dark:text-rose-300'
                 : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {isPlus ? (
-              <>
-                <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-                <span>Mitemasuka Plus • Sınırsız</span>
-              </>
+              <span>Plus • Sınırsız</span>
             ) : (
-              <>
-                <span>
-                  Hak:{' '}
-                  <strong className="text-slate-900 dark:text-white">
-                    {remainingQuota}
-                  </strong>
-                  /{dailyLimit}
+              <span>
+                <strong className="text-slate-900 dark:text-white">
+                  {remainingQuota}
+                </strong>
+                /{dailyLimit} mesaj •{' '}
+                <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                  Plus
                 </span>
-                <span className="text-blue-600 dark:text-amber-400 font-semibold">
-                  • Sınırsız ⚡
-                </span>
-              </>
+              </span>
             )}
           </button>
 
           <button
             type="button"
             onClick={() => setShowStoryModal(true)}
-            className="hover:text-blue-600 dark:hover:text-blue-400 transition truncate ml-2"
+            className="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition truncate ml-2"
           >
-            <span className="text-blue-700 dark:text-blue-400 font-semibold">
-              見てますか?
-            </span>{' '}
-            • Beni görüyor musun?
+            Beni görüyor musun?
           </button>
         </div>
       </footer>
@@ -2081,7 +2062,7 @@ export default function MitemasukaPage() {
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Tek Yönlü Kanal Kur 📢
+                  Tek Yönlü Kanal Kur
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Konser, miting, konferans veya gezilerde çevrendekilere yazılı
@@ -2111,7 +2092,7 @@ export default function MitemasukaPage() {
                   Yayın Menzili & Paketi Seçin
                 </label>
                 <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                  ✨ Tanıtıma Özel Şimdilik Ücretsiz
+                  Tanıtıma Özel Şimdilik Ücretsiz
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2.5">
@@ -2168,7 +2149,7 @@ export default function MitemasukaPage() {
               disabled={!channelTitleInput.trim()}
               className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm transition shadow-md shadow-rose-600/20 disabled:opacity-40"
             >
-              📢 Kanalı Ücretsiz Başlat ({selectedChannelPlan.rangeLabel})
+              Kanalı Ücretsiz Başlat ({selectedChannelPlan.rangeLabel})
             </button>
           </form>
         </div>
@@ -2500,17 +2481,17 @@ export default function MitemasukaPage() {
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Mitemasuka Plus ⚡
+                  Mitemasuka Plus
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  見てますか? — Tüm menzillerde sınırsız tanış
+                  Tüm menzillerde sınırsız tanış
                 </p>
               </div>
             </div>
 
             {paywallReason && (
               <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/40 text-amber-800 dark:text-amber-200 text-xs px-3.5 py-2.5 rounded-xl">
-                🔒 {paywallReason}
+                {paywallReason}
               </div>
             )}
 
@@ -2539,7 +2520,7 @@ export default function MitemasukaPage() {
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span>
-                  <strong>Özel Rumuz & 👻 Hayalet Modu:</strong> Kendi adını seç
+                  <strong>Özel Rumuz & Hayalet Modu:</strong> Kendi adını seç
                   veya odaya sessizce gir
                 </span>
               </div>
@@ -2547,7 +2528,7 @@ export default function MitemasukaPage() {
 
             <div className="space-y-2">
               <div className="text-center text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
-                ✨ Tanışma dönemimize özel tüm Plus ayrıcalıkları şimdilik
+                Tanışma dönemimize özel tüm Plus ayrıcalıkları şimdilik
                 ücretsizdir
               </div>
               <div className="grid grid-cols-3 gap-2">
@@ -2604,7 +2585,7 @@ export default function MitemasukaPage() {
               onClick={handleActivatePlus}
               className="w-full py-3 rounded-2xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm transition shadow-md shadow-blue-700/20"
             >
-              ⚡ Seçili Paketi Ücretsiz Aktif Et
+              Seçili Paketi Ücretsiz Aktif Et
             </button>
           </div>
         </div>
