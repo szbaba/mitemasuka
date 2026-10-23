@@ -2299,14 +2299,39 @@ export default function MitemasukaPage() {
             CHAT_BACKGROUNDS[0].className
           }`}
         >
-          {/* SADE "ÖZEL" SEKME KULAĞI (Sağ kenarda küçük kulakçık, "Oda" yazısı yok) */}
-          <div className="sticky top-0 z-10 flex justify-end -mr-2.5 sm:-mr-4 -mt-1 pointer-events-none">
+          {/* SOLDA BİLGİ KULAKÇIĞI + SAĞDA "ÖZEL" SEKME KULAĞI (Aynı hizada ve sabit) */}
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-2 -mx-2.5 sm:-mx-4 -mt-1 pointer-events-none">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMembersDrawer((prev) => !prev);
+                setShowRadiusMenu(false);
+                setShowHamburgerMenu(false);
+              }}
+              className="pointer-events-auto flex items-center gap-1 pl-3 pr-3.5 py-1.5 rounded-r-full border border-l-0 text-[11px] font-medium shadow-sm bg-white/95 dark:bg-neutral-800/95 text-slate-600 dark:text-neutral-300 border-slate-200 dark:border-neutral-700 hover:bg-slate-50 dark:hover:bg-neutral-700 transition truncate max-w-[76%]"
+            >
+              <strong className="text-slate-900 dark:text-white font-semibold">
+                {selectedRadius >= 1000
+                  ? `${selectedRadius / 1000} km`
+                  : `${selectedRadius}m`}
+              </strong>
+              <span>·</span>
+              <span className="truncate">
+                {t.nearbyInstalledBadge
+                  .replace('{active}', String(roomUsers.length))
+                  .replace(
+                    '{installed}',
+                    String(Math.max(roomUsers.length, nearbyInstalledCount))
+                  )}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() =>
                 setActiveView((prev) => (prev === 'dm' ? 'room' : 'dm'))
               }
-              className={`pointer-events-auto flex items-center gap-1.5 pl-3 pr-3.5 py-1.5 rounded-l-full border border-r-0 text-xs font-semibold shadow-sm transition ${
+              className={`pointer-events-auto flex items-center gap-1.5 pl-3 pr-3.5 py-1.5 rounded-l-full border border-r-0 text-xs font-semibold shadow-sm shrink-0 transition ${
                 activeView === 'dm'
                   ? 'bg-[#1A81E5] text-white border-[#1A81E5]'
                   : unreadDmCount > 0 || isDmWaitingMyAccept
@@ -2332,23 +2357,8 @@ export default function MitemasukaPage() {
 
           {activeView === 'room' ? (
           <>
-          <div className="flex flex-col items-center gap-1.5 my-1.5">
-            <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-[11px] font-medium px-3.5 py-1.5 rounded-full text-center shadow-2xs">
-              <strong className="text-slate-900 dark:text-white">
-                {selectedRadius >= 1000
-                  ? `${selectedRadius / 1000} km`
-                  : `${selectedRadius}m`}
-              </strong>
-              {' · '}
-              {t.nearbyInstalledBadge
-                .replace('{active}', String(roomUsers.length))
-                .replace(
-                  '{installed}',
-                  String(Math.max(roomUsers.length, nearbyInstalledCount))
-                )}
-            </div>
-
-            {!pushSubscribed && (
+          {!pushSubscribed && (
+            <div className="flex justify-center my-1">
               <button
                 type="button"
                 onClick={() => subscribeToLockScreenPush(true)}
@@ -2356,8 +2366,8 @@ export default function MitemasukaPage() {
               >
                 {t.enableLockScreenWake}
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           {groupedMessages.map((entry) => {
             if (entry.group) {
