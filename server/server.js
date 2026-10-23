@@ -469,7 +469,7 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
   socket.emit('system_message', {
     id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type: 'info',
-    text: `${targetRadius >= 1000 ? targetRadius / 1000 + ' km' : targetRadius + ' m'} menzil odasına bağlandınız (${user.username}${user.ghostMode ? ' • 👻 Hayalet Mod' : ''})`,
+    text: `${targetRadius >= 1000 ? targetRadius / 1000 + ' km' : targetRadius + ' m'} menzil odasına bağlandınız (${user.username}${user.ghostMode ? ' • Hayalet Mod' : ''})`,
     timestamp: new Date().toISOString(),
   });
 
@@ -574,7 +574,7 @@ io.on('connection', (socket) => {
       io.to(user.roomId).emit('system_message', {
         id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         type: 'info',
-        text: `✨ ${oldName} adını "${cleanName}" olarak değiştirdi`,
+        text: `${oldName} adını "${cleanName}" olarak değiştirdi`,
         timestamp: new Date().toISOString(),
       });
     }
@@ -588,7 +588,7 @@ io.on('connection', (socket) => {
     if (!user.isPlus) {
       socket.emit('paywall_trigger', {
         reason: 'ghost_mode',
-        message: '👻 Hayalet Modu kullanmak için MiniTemas Plus gereklidir.',
+        message: 'Hayalet Modu kullanmak için MiniTemas Plus gereklidir.',
       });
       return;
     }
@@ -695,7 +695,7 @@ io.on('connection', (socket) => {
       socket.emit('system_message', {
         id: `sys_${Date.now()}`,
         type: 'leave',
-        text: '⛔ Topluluk kurallarını ihlal ettiğiniz için mesaj gönderiminiz kısıtlanmıştır.',
+        text: 'Topluluk kurallarını ihlal ettiğiniz için mesaj gönderiminiz kısıtlanmıştır.',
         timestamp: new Date().toISOString(),
       });
       return;
@@ -977,7 +977,7 @@ io.on('connection', (socket) => {
             io.to(u.roomId).emit('system_message', {
               id: `sys_${Date.now()}`,
               type: 'leave',
-              text: `🛡️ ${u.username} çoklu kullanıcı şikayeti nedeniyle odadan susturuldu.`,
+              text: `${u.username} çoklu kullanıcı şikayeti nedeniyle odadan susturuldu.`,
               timestamp: new Date().toISOString(),
             });
           }

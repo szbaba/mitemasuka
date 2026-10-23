@@ -167,7 +167,6 @@ const CHANNEL_PLANS = [
   },
 ];
 
-const EMOJI_LIST = ['❤️', '😂', '👍', '🔥'];
 const CHANNEL_REACTIONS = ['👏', '🔥', '❤️', '👍'];
 
 const CHAT_BACKGROUNDS = [
@@ -745,7 +744,7 @@ export default function MitemasukaPage() {
             ) {
               playTinSound('presence');
               triggerBrowserNotification(
-                '🚪 Mitemasuka Radar',
+                'Beni Görüyor Musun?',
                 String(data.text || '')
               );
             }
@@ -809,7 +808,7 @@ export default function MitemasukaPage() {
               if (whisperNotifRef.current) {
                 playTinSound('whisper');
                 triggerBrowserNotification(
-                  `🔒 ${data.senderName} (Özel Fısıltı)`,
+                  `${data.senderName} (${t.tabPrivate})`,
                   String(data.text || '')
                 );
               }
@@ -839,13 +838,13 @@ export default function MitemasukaPage() {
               if (isWhisper && whisperNotifRef.current) {
                 playTinSound('whisper');
                 triggerBrowserNotification(
-                  `🔒 ${data.senderName} (Özel Fısıltı)`,
+                  `${data.senderName} (${t.tabPrivate})`,
                   String(data.text || '')
                 );
               } else if (!isWhisper && roomNotifRef.current) {
                 playTinSound('room');
                 triggerBrowserNotification(
-                  `💬 ${data.senderName}`,
+                  String(data.senderName || 'Mitemasuka'),
                   String(data.text || '')
                 );
               }
@@ -1406,7 +1405,7 @@ export default function MitemasukaPage() {
     socket.emit('report_user', { targetClientId });
     setReportedClientIds((prev) => ({ ...prev, [targetClientId]: true }));
     alert(
-      `🛡️ ${targetName} bildirildi. Odadaki 3 farklı kişi şikayet ederse otomatik olarak susturulacaktır.`
+      `${targetName} bildirildi. Odadaki 3 farklı kişi şikayet ederse otomatik olarak susturulacaktır.`
     );
   };
 
@@ -2311,35 +2310,27 @@ export default function MitemasukaPage() {
 
           {activeView === 'room' ? (
           <>
-          <div className="flex flex-col items-center gap-1.5 my-2">
-            <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs space-y-1.5">
-              <div>
-                <span className="text-[#1A81E5] font-semibold">
-                  {t.doYouSeeMe}
-                </span>{' '}
-                — {t.roomBannerPrefix}{' '}
-                <strong className="text-slate-900 dark:text-white">
-                  {selectedRadius >= 1000
-                    ? `${selectedRadius / 1000} km`
-                    : `${selectedRadius} ${t.meters}`}
-                </strong>{' '}
-                {t.roomBannerSuffix}
-              </div>
-              <div className="pt-1 border-t border-slate-100 dark:border-neutral-700/70 text-[11px] font-semibold text-slate-700 dark:text-neutral-200">
-                {t.nearbyInstalledBadge
-                  .replace('{active}', String(roomUsers.length))
-                  .replace(
-                    '{installed}',
-                    String(Math.max(roomUsers.length, nearbyInstalledCount))
-                  )}
-              </div>
+          <div className="flex flex-col items-center gap-1.5 my-1.5">
+            <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-[11px] font-medium px-3.5 py-1.5 rounded-full text-center shadow-2xs">
+              <strong className="text-slate-900 dark:text-white">
+                {selectedRadius >= 1000
+                  ? `${selectedRadius / 1000} km`
+                  : `${selectedRadius}m`}
+              </strong>
+              {' · '}
+              {t.nearbyInstalledBadge
+                .replace('{active}', String(roomUsers.length))
+                .replace(
+                  '{installed}',
+                  String(Math.max(roomUsers.length, nearbyInstalledCount))
+                )}
             </div>
 
             {!pushSubscribed && (
               <button
                 type="button"
                 onClick={() => subscribeToLockScreenPush(true)}
-                className="text-[11px] font-semibold px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1A81E5] dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition shadow-2xs"
+                className="text-[11px] font-medium px-3 py-1 rounded-full bg-white/90 dark:bg-neutral-800/90 hover:bg-blue-50 dark:hover:bg-neutral-700 text-[#1A81E5] dark:text-blue-300 border border-slate-200 dark:border-neutral-700 transition shadow-2xs"
               >
                 {t.enableLockScreenWake}
               </button>
@@ -2364,7 +2355,7 @@ export default function MitemasukaPage() {
                     }
                     className="text-xs px-3 py-1 rounded-full border shadow-2xs font-medium bg-white dark:bg-neutral-800 text-slate-600 dark:text-neutral-300 border-slate-200 dark:border-neutral-700 hover:bg-slate-50 dark:hover:bg-neutral-700 transition"
                   >
-                    👥 {parts.join(' · ')} {open ? '▴' : '▾'}
+                    {parts.join(' · ')} {open ? '▴' : '▾'}
                   </button>
                   {open &&
                     grp.map((g) => (
@@ -2542,77 +2533,47 @@ export default function MitemasukaPage() {
                   </div>
 
                   <div
-                    className={`mt-1.5 pt-1 border-t flex items-center justify-between gap-2 opacity-85 group-hover:opacity-100 transition ${
+                    className={`mt-1.5 pt-1 border-t flex items-center justify-end gap-2.5 opacity-85 group-hover:opacity-100 transition ${
                       isMine
                         ? 'border-white/15'
                         : 'border-slate-100 dark:border-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-1">
-                      {EMOJI_LIST.map((em) => {
-                        const count = item.reactions?.[em]?.length || 0;
-                        return (
-                          <button
-                            key={em}
-                            onClick={() =>
-                              socket?.emit('react_message', {
-                                messageId: item.id,
-                                emoji: em,
-                              })
-                            }
-                            className={`text-[11px] px-1.5 py-0.5 rounded-full transition ${
-                              count > 0
-                                ? isMine
-                                  ? 'bg-white/25 text-white font-semibold'
-                                  : 'bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-500/30'
-                                : isMine
-                                ? 'hover:bg-white/15 text-blue-100'
-                                : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400'
-                            }`}
-                          >
-                            {em} {count > 0 && count}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-2.5">
-                      {!isMine && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleToggleOrTranslateMessage(item.id, item.text)
-                          }
-                          className="text-[11px] flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
-                        >
-                          <Globe className="w-3 h-3" />
-                          <span>
-                            {translations[`${item.id}_${uiLang}`] &&
-                            !hiddenTranslationIds[`${item.id}_${uiLang}`]
-                              ? t.original
-                              : t.translate}
-                          </span>
-                        </button>
-                      )}
-
+                    {!isMine && (
                       <button
+                        type="button"
                         onClick={() =>
-                          setReplyingTo({
-                            id: item.id,
-                            senderName: item.senderName || 'Kullanıcı',
-                            text: item.text,
-                          })
+                          handleToggleOrTranslateMessage(item.id, item.text)
                         }
-                        className={`text-[11px] flex items-center gap-1 font-medium ${
-                          isMine
-                            ? 'text-blue-100 hover:text-white'
-                            : 'text-slate-400 hover:text-blue-600 dark:hover:text-white'
-                        }`}
+                        className="text-[11px] flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
                       >
-                        <Reply className="w-3 h-3" />
-                        <span>{t.reply}</span>
+                        <Globe className="w-3 h-3" />
+                        <span>
+                          {translations[`${item.id}_${uiLang}`] &&
+                          !hiddenTranslationIds[`${item.id}_${uiLang}`]
+                            ? t.original
+                            : t.translate}
+                        </span>
                       </button>
-                    </div>
+                    )}
+
+                    <button
+                      onClick={() =>
+                        setReplyingTo({
+                          id: item.id,
+                          senderName: item.senderName || 'Kullanıcı',
+                          text: item.text,
+                        })
+                      }
+                      className={`text-[11px] flex items-center gap-1 font-medium ${
+                        isMine
+                          ? 'text-blue-100 hover:text-white'
+                          : 'text-slate-400 hover:text-blue-600 dark:hover:text-white'
+                      }`}
+                    >
+                      <Reply className="w-3 h-3" />
+                      <span>{t.reply}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2731,8 +2692,9 @@ export default function MitemasukaPage() {
                           {!mine &&
                             translations[trKey] &&
                             !hiddenTranslationIds[trKey] && (
-                              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-neutral-700 text-blue-600 dark:text-blue-300 text-[13px] whitespace-pre-wrap break-words">
-                                🌐 {translations[trKey]}
+                              <div className="mt-1.5 pt-1.5 border-t border-slate-200 dark:border-neutral-700 text-blue-600 dark:text-blue-300 text-[13px] whitespace-pre-wrap break-words flex items-start gap-1">
+                                <Globe className="w-3 h-3 shrink-0 translate-y-1 opacity-80" />
+                                <span>{translations[trKey]}</span>
                               </div>
                             )}
                           <div
@@ -2751,7 +2713,7 @@ export default function MitemasukaPage() {
                   {isDmWaitingMyAccept && (
                     <div className="bg-white dark:bg-neutral-800 border border-violet-200 dark:border-violet-500/40 rounded-2xl p-4 text-center space-y-3 shadow-sm">
                       <div className="text-xs font-semibold text-slate-800 dark:text-neutral-100">
-                        🔒 {t.dmRequestFrom.replace('{name}', dmPeer.username)}
+                        {t.dmRequestFrom.replace('{name}', dmPeer.username)}
                       </div>
                       <div className="flex items-center justify-center gap-2.5">
                         <button
@@ -2759,14 +2721,14 @@ export default function MitemasukaPage() {
                           onClick={handleAcceptDm}
                           className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
                         >
-                          ✓ {t.dmAcceptBtn}
+                          {t.dmAcceptBtn}
                         </button>
                         <button
                           type="button"
                           onClick={() => handleCloseDm('rejected')}
                           className="px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition"
                         >
-                          ✕ {t.dmRejectBtn}
+                          {t.dmRejectBtn}
                         </button>
                       </div>
                     </div>
@@ -2775,7 +2737,7 @@ export default function MitemasukaPage() {
                   {/* ONAY BEKLENİYOR BİLGİSİ (Gönderen için) */}
                   {isDmWaitingPeerAccept && (
                     <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/30 rounded-2xl px-4 py-3 text-center text-xs text-amber-800 dark:text-amber-300">
-                      ⏳ {t.dmWaitingAccept.replace('{name}', dmPeer.username)}
+                      {t.dmWaitingAccept.replace('{name}', dmPeer.username)}
                     </div>
                   )}
 
@@ -2997,12 +2959,12 @@ export default function MitemasukaPage() {
 
             <div className="bg-slate-50 dark:bg-neutral-800 p-3 rounded-2xl border border-slate-200 dark:border-neutral-700 text-xs text-slate-600 dark:text-neutral-300 space-y-1">
               <div>
-                🎙️ <strong>Canlı Sesli Altyazı (Speech-to-Text):</strong> Siz
+                <strong>Canlı Sesli Altyazı (Speech-to-Text):</strong> Siz
                 mikrofona konuştukça cümleleriniz otomatik yazıya çevrilip
                 menzildeki herkesin ekranına düşer.
               </div>
               <div>
-                🔇 <strong>Tek Yönlü Akış:</strong> Dinleyiciler mesaj yazıp
+                <strong>Tek Yönlü Akış:</strong> Dinleyiciler mesaj yazıp
                 ekranı kirletemez, sadece alkış/tepki gönderebilir.
               </div>
             </div>
@@ -3026,7 +2988,7 @@ export default function MitemasukaPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold uppercase animate-pulse">
-                  🔴 {t.liveChannel}
+                  {t.liveChannel}
                 </span>
                 <span className="text-xs text-rose-600 dark:text-amber-300 font-semibold">
                   {activeChannel.radius >= 1000
@@ -3036,7 +2998,7 @@ export default function MitemasukaPage() {
                 </span>
               </div>
               <h2 className="text-base font-extrabold text-slate-900 dark:text-white truncate mt-1">
-                📢 {activeChannel.title}
+                {activeChannel.title}
               </h2>
               <p className="text-xs text-slate-500 dark:text-neutral-400">
                 {t.speaker}:{' '}
@@ -3111,7 +3073,7 @@ export default function MitemasukaPage() {
             {/* Konuşmacı o an konuşurken anlık önizleme */}
             {liveTranscriptPreview && (
               <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/40 rounded-2xl p-4 text-rose-700 dark:text-rose-200 italic animate-pulse">
-                🎙️ {liveTranscriptPreview}...
+                {liveTranscriptPreview}...
               </div>
             )}
 
@@ -3193,7 +3155,7 @@ export default function MitemasukaPage() {
               </form>
             ) : (
               <div className="text-center text-xs text-slate-500 dark:text-neutral-400 bg-slate-50 dark:bg-neutral-800 py-2 rounded-xl border border-slate-200 dark:border-neutral-700">
-                🔇 Bu tek yönlü bir anons kanalıdır. Sadece konuşmacı (
+                Bu tek yönlü bir anons kanalıdır. Sadece konuşmacı (
                 <strong>{activeChannel.ownerName}</strong>) ileti gönderebilir.
               </div>
             )}
@@ -3224,7 +3186,7 @@ export default function MitemasukaPage() {
                       : 'bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
-                  {lng === 'tr' ? '🇹🇷 TR' : lng === 'en' ? '🇬🇧 EN' : '🇯🇵 JP'}
+                  {lng === 'tr' ? 'TR' : lng === 'en' ? 'EN' : 'JP'}
                 </button>
               ))}
             </div>
@@ -3246,7 +3208,7 @@ export default function MitemasukaPage() {
                 </p>
                 <div className="bg-slate-50 dark:bg-neutral-800 p-3.5 rounded-2xl border border-slate-200 dark:border-neutral-700 space-y-2 text-xs">
                   <div className="font-bold text-blue-700 dark:text-amber-300">
-                    ✨ İsmin Doğuş Hikayesi:
+                    İsmin Doğuş Hikayesi:
                   </div>
                   <p className="text-slate-600 dark:text-neutral-300">
                     Japoncada{' '}
@@ -3260,7 +3222,7 @@ export default function MitemasukaPage() {
                 </div>
                 <div className="space-y-1.5 text-xs text-slate-700 dark:text-neutral-200">
                   <div className="font-bold text-blue-700 dark:text-blue-400">
-                    🚀 Nasıl Çalışır?
+                    Nasıl Çalışır?
                   </div>
                   <p>
                     • <strong>İndirme veya Kayıt Yok:</strong> Sadece{' '}
@@ -3273,7 +3235,7 @@ export default function MitemasukaPage() {
                     buluşturur.
                   </p>
                   <p>
-                    • <strong>📢 Tek Yönlü Megafon Kanalı:</strong> Konser,
+                    • <strong>Tek Yönlü Megafon Kanalı:</strong> Konser,
                     miting, konferans veya gezilerde konuşmacının sesi anında
                     yazılı altyazı olarak menzildeki herkesin ekranına düşer.
                   </p>
@@ -3303,7 +3265,7 @@ export default function MitemasukaPage() {
                     live <strong>100-meter</strong> radius room instantly.
                   </p>
                   <p>
-                    • <strong>📢 Live Broadcast Channels:</strong> One-way live
+                    • <strong>Live Broadcast Channels:</strong> One-way live
                     voice-to-text captions for concerts, rallies, lectures, and
                     guided tours.
                   </p>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'minitemas-pwa-v2';
+const CACHE_NAME = 'minitemas-pwa-v3';
 const WS_HTTP_BASE = 'https://ws.mitemasuka.com';
 
 let savedClientId = '';
@@ -29,9 +29,8 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', (event) => {
   const handlePush = async () => {
-    let title = '👋 Mitemasuka — Beni Görüyor Musun?';
-    let body =
-      '100m yakınında biri uygulamayı açtı! Odaya bağlanmak için dokun.';
+    let title = 'Beni Görüyor Musun?';
+    let body = '100m çevrende biri odaya girdi.';
 
     if (event.data) {
       try {

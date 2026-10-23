@@ -230,8 +230,8 @@ export class MitemasukaHub {
 
       prof.lastPushSentAt = now;
       prof.lastPushPayload = {
-        title: '👋 Mitemasuka — Beni Görüyor Musun?',
-        body: `${Math.round(dist)}m yakınında ${enteringUser.username} uygulamayı açtı! Odaya bağlanmak için dokun.`,
+        title: 'Beni Görüyor Musun?',
+        body: `${Math.round(dist)}m yakınında biri odaya girdi.`,
         timestamp: now,
       };
 
@@ -648,7 +648,7 @@ export class MitemasukaHub {
       text: `${
         targetRadius >= 1000 ? targetRadius / 1000 + ' km' : targetRadius + ' m'
       } menzil odasına bağlandınız (${user.username}${
-        user.ghostMode ? ' • 👻 Hayalet Mod' : ''
+        user.ghostMode ? ' · Hayalet Mod' : ''
       })`,
       timestamp: new Date().toISOString(),
     });
@@ -713,7 +713,7 @@ export class MitemasukaHub {
         messages: [
           {
             id: `bmsg_${Date.now()}`,
-            text: `📢 "${title}" canlı anons kanalı başlatıldı. Konuşmacının yazılı ve sesli duyuruları buradan anlık akacaktır.`,
+            text: `"${title}" canlı anons kanalı başlatıldı. Konuşmacının yazılı ve sesli duyuruları buradan anlık akacaktır.`,
             isLiveVoice: false,
             timestamp: new Date().toISOString(),
           },
@@ -730,7 +730,7 @@ export class MitemasukaHub {
         this.broadcastToRoom(user.roomId, 'system_message', {
           id: `sys_${Date.now()}`,
           type: 'info',
-          text: `📢 ${user.username} yeni bir Tek Yönlü Anons Kanalı açtı: "${title}"`,
+          text: `${user.username} yeni bir Tek Yönlü Anons Kanalı açtı: "${title}"`,
           timestamp: new Date().toISOString(),
         });
       }
@@ -839,7 +839,7 @@ export class MitemasukaHub {
         this.broadcastToRoom(user.roomId, 'system_message', {
           id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           type: 'info',
-          text: `✨ ${oldName} adını "${cleanName}" olarak değiştirdi`,
+          text: `${oldName} adını "${cleanName}" olarak değiştirdi`,
           timestamp: new Date().toISOString(),
         });
       }
@@ -850,7 +850,7 @@ export class MitemasukaHub {
       if (!user.isPlus) {
         this.sendEvent(user.ws, 'paywall_trigger', {
           reason: 'ghost_mode',
-          message: '👻 Hayalet Modu kullanmak için Mitemasuka Plus gereklidir.',
+          message: 'Hayalet Modu kullanmak için Mitemasuka Plus gereklidir.',
         });
         return;
       }
@@ -955,7 +955,7 @@ export class MitemasukaHub {
         this.sendEvent(user.ws, 'system_message', {
           id: `sys_${Date.now()}`,
           type: 'leave',
-          text: '⛔ Topluluk kurallarını ihlal ettiğiniz için mesaj gönderiminiz kısıtlanmıştır.',
+          text: 'Topluluk kurallarını ihlal ettiğiniz için mesaj gönderiminiz kısıtlanmıştır.',
           timestamp: new Date().toISOString(),
         });
         return;
@@ -1230,7 +1230,7 @@ export class MitemasukaHub {
               this.broadcastToRoom(u.roomId, 'system_message', {
                 id: `sys_${Date.now()}`,
                 type: 'leave',
-                text: `🛡️ ${u.username} çoklu kullanıcı şikayeti nedeniyle odadan susturuldu.`,
+                text: `${u.username} çoklu kullanıcı şikayeti nedeniyle odadan susturuldu.`,
                 timestamp: new Date().toISOString(),
               });
             }
@@ -1263,8 +1263,8 @@ export class MitemasukaHub {
       const cid = url.searchParams.get('clientId') || '';
       const prof = cid ? this.profiles.get(cid) : null;
       const payload = prof?.lastPushPayload || {
-        title: '👋 Mitemasuka — Beni Görüyor Musun?',
-        body: '100m yakınında biri uygulamayı açtı! Odaya bağlanmak için dokun.',
+        title: 'Beni Görüyor Musun?',
+        body: '100m çevrende biri odaya girdi.',
       };
       return new Response(JSON.stringify(payload), {
         headers: {
