@@ -26,6 +26,8 @@ const MAX_ROOM_HISTORY = 25;
 const MAX_ROOM_WHISPERS = 100;
 // Otomatik ban/susturma için gereken farklı şikayetçi sayısı
 const REPORT_BAN_THRESHOLD = 3;
+// Tanışma dönemi: Tüm kullanıcılar varsayılan olarak Plus başlar (ücretliye geçince false yapılır)
+const DEFAULT_PLUS_ENABLED = true;
 
 /**
  * Aktif bağlı soketler
@@ -99,6 +101,10 @@ function getOrCreateProfile(clientId) {
       prof.quotaDay = today;
       prof.dailyCount = 0;
     }
+    if (DEFAULT_PLUS_ENABLED && !prof.isPlus) {
+      prof.isPlus = true;
+      prof.plusPlan = prof.plusPlan || 'promo';
+    }
     return prof;
   }
 
@@ -107,8 +113,8 @@ function getOrCreateProfile(clientId) {
     clientId,
     username: `User_${randomNum}`,
     color: USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)],
-    isPlus: false,
-    plusPlan: null,
+    isPlus: DEFAULT_PLUS_ENABLED,
+    plusPlan: DEFAULT_PLUS_ENABLED ? 'promo' : null,
     ghostMode: false,
     dailyCount: 0,
     quotaDay: today,

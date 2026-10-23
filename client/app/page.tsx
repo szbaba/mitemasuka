@@ -325,12 +325,12 @@ export default function MitemasukaPage() {
   const [socket, setSocket] = useState<WsClient | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // Kullanıcının kalıcı kimliği ve Plus / Kota durumu
+  // Kullanıcının kalıcı kimliği ve Plus / Kota durumu (tanışma döneminde varsayılan Plus)
   const [myId, setMyId] = useState<string>('');
   const [myClientId, setMyClientId] = useState<string>('');
   const [myUsername, setMyUsername] = useState<string>('Bağlanıyor...');
   const [myColor, setMyColor] = useState<string>('#34D399');
-  const [isPlus, setIsPlus] = useState<boolean>(false);
+  const [isPlus, setIsPlus] = useState<boolean>(true);
   const [ghostMode, setGhostMode] = useState<boolean>(false);
   const [remainingQuota, setRemainingQuota] = useState<number>(15);
   const [dailyLimit, setDailyLimit] = useState<number>(15);
