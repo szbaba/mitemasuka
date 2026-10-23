@@ -121,7 +121,8 @@ export class MitemasukaHub {
               quotaDay: today,
               reportedBy: new Set(),
               whisperContacts: new Set(),
-              isBanned: Boolean(item.isBanned),
+              isBanned: Boolean(item.isBanned && item.banDay === today),
+              banDay: item.banDay === today ? today : null,
               lastLat: typeof item.lastLat === 'number' ? item.lastLat : null,
               lastLng: typeof item.lastLng === 'number' ? item.lastLng : null,
               lastRadius: item.lastRadius || 100,
@@ -153,6 +154,7 @@ export class MitemasukaHub {
             plusPlan: p.plusPlan,
             ghostMode: p.ghostMode,
             isBanned: p.isBanned,
+            banDay: p.banDay || null,
             lastLat: p.lastLat,
             lastLng: p.lastLng,
             lastRadius: p.lastRadius || 100,
@@ -397,6 +399,9 @@ export class MitemasukaHub {
       if (prof.quotaDay !== today) {
         prof.quotaDay = today;
         prof.dailyCount = 0;
+        prof.isBanned = false;
+        prof.banDay = null;
+        if (prof.reportedBy) prof.reportedBy.clear();
       }
       if (DEFAULT_PLUS_ENABLED && !prof.isPlus) {
         prof.isPlus = true;
@@ -419,6 +424,7 @@ export class MitemasukaHub {
       // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
       whisperContacts: new Set(),
       isBanned: false,
+      banDay: null,
       lastLat: null,
       lastLng: null,
       lastRadius: 100,
@@ -1223,6 +1229,8 @@ export class MitemasukaHub {
         !targetProf.isBanned
       ) {
         targetProf.isBanned = true;
+        targetProf.banDay = getTodayKey();
+        this.persistKnownDevices();
         for (const [, u] of this.users.entries()) {
           if (u.clientId === targetProf.clientId) {
             this.sendQuotaAndIdentity(u);
@@ -1230,7 +1238,7 @@ export class MitemasukaHub {
               this.broadcastToRoom(u.roomId, 'system_message', {
                 id: `sys_${Date.now()}`,
                 type: 'leave',
-                text: `${u.username} çoklu kullanıcı şikayeti nedeniyle odadan susturuldu.`,
+                text: `${u.username} çoklu kullanıcı şikayeti nedeniyle bugünlük susturuldu.`,
                 timestamp: new Date().toISOString(),
               });
             }

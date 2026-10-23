@@ -100,6 +100,9 @@ function getOrCreateProfile(clientId) {
     if (prof.quotaDay !== today) {
       prof.quotaDay = today;
       prof.dailyCount = 0;
+      prof.isBanned = false;
+      prof.banDay = null;
+      if (prof.reportedBy) prof.reportedBy.clear();
     }
     if (DEFAULT_PLUS_ENABLED && !prof.isPlus) {
       prof.isPlus = true;
@@ -122,6 +125,7 @@ function getOrCreateProfile(clientId) {
     // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
     whisperContacts: new Set(),
     isBanned: false,
+    banDay: null,
     lastLat: null,
     lastLng: null,
     lastRadius: 100,
@@ -965,6 +969,7 @@ io.on('connection', (socket) => {
       !targetProf.isBanned
     ) {
       targetProf.isBanned = true;
+      targetProf.banDay = getTodayKey();
       // Hedef kullanıcının aktif soketlerini bul ve bilgilendir
       for (const [sockId, u] of users.entries()) {
         if (u.clientId === targetProf.clientId) {
@@ -977,7 +982,7 @@ io.on('connection', (socket) => {
             io.to(u.roomId).emit('system_message', {
               id: `sys_${Date.now()}`,
               type: 'leave',
-              text: `${u.username} çoklu kullanıcı şikayeti nedeniyle odadan susturuldu.`,
+              text: `${u.username} çoklu kullanıcı şikayeti nedeniyle bugünlük susturuldu.`,
               timestamp: new Date().toISOString(),
             });
           }
