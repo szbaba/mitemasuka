@@ -324,6 +324,7 @@ export default function MitemasukaPage() {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
   const [showMembersDrawer, setShowMembersDrawer] = useState<boolean>(false);
+  const [showRadiusMenu, setShowRadiusMenu] = useState<boolean>(false);
 
   // 📢 Tek Yönlü Megafon / Anons Kanalları Durumu
   const [nearbyChannels, setNearbyChannels] = useState<BroadcastChannel[]>([]);
@@ -987,87 +988,115 @@ export default function MitemasukaPage() {
   return (
     <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-slate-50 dark:bg-neutral-900 text-slate-900 dark:text-neutral-100 border-x border-slate-200/80 dark:border-neutral-800 shadow-2xl overflow-hidden transition-colors duration-200">
       {/* ÜST BAR (Corsecure Clean Trust Navbar Stili) */}
-      <header className="bg-white/85 dark:bg-neutral-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-neutral-800 z-20 shrink-0 transition-colors">
-        <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
-          <div
-            className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1"
-            onClick={() => setShowMembersDrawer((prev) => !prev)}
-          >
-            <div className="relative flex items-center justify-center w-16 h-16 shrink-0 -my-1.5">
+      <header className="bg-white/85 dark:bg-neutral-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-neutral-800 z-30 shrink-0 transition-colors">
+        <div className="px-3.5 py-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 select-none min-w-0">
+            <div className="relative flex items-center justify-center w-14 h-14 shrink-0 -my-1.5">
               <img
                 src="/logo-karga.png"
                 alt="Mitemasuka"
-                className="w-16 h-16 object-contain"
+                className="w-14 h-14 object-contain"
               />
               <span
-                className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-neutral-900 ${
+                className={`absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
                   isConnected ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
             </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <h1 className="font-bold text-base leading-tight truncate tracking-tight uppercase">
-                  <span className="text-slate-400 dark:text-neutral-500">
-                    Mitema
-                  </span>
-                  <span className="text-blue-700 dark:text-blue-400">suka</span>
-                </h1>
-                {showMembersDrawer ? (
-                  <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-neutral-400 flex items-center gap-1.5 truncate mt-0.5">
-                <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span className="text-slate-800 dark:text-neutral-200 font-semibold">
-                  {roomUsers.length} kişi
-                </span>
-                <span>•</span>
-                <span
-                  style={{ color: myColor }}
-                  className="font-semibold truncate flex items-center gap-1"
-                >
-                  {myUsername}
-                  {isPlus && (
-                    <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-md">
-                      Plus
-                    </span>
-                  )}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          <div className="hidden sm:flex bg-slate-100 dark:bg-neutral-800/90 p-0.5 rounded-xl border border-slate-200/80 dark:border-neutral-700/80 shrink-0">
-            {RADIUS_OPTIONS.map((opt) => {
-              const locked = opt.requiresPlus && !isPlus;
-              const isSelected = selectedRadius === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  onClick={() => handleSelectRadius(opt)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all flex items-center gap-1 ${
-                    isSelected
-                      ? 'bg-[#1A81E5] text-white font-semibold shadow-sm shadow-[#1A81E5]/25'
-                      : locked
-                      ? 'text-slate-500 dark:text-neutral-400 hover:text-amber-600 dark:hover:text-amber-300'
-                      : 'text-slate-600 dark:text-neutral-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span>{opt.label}</span>
-                  {locked && <Lock className="w-2.5 h-2.5 text-amber-500" />}
-                </button>
-              );
-            })}
+            <h1 className="font-bold text-base sm:text-lg leading-tight truncate tracking-tight uppercase">
+              <span className="text-slate-400 dark:text-neutral-500">
+                Mitema
+              </span>
+              <span className="text-[#1A81E5]">suka</span>
+            </h1>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Odadaki Kişiler & Profil Mini Butonu */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowMembersDrawer((prev) => !prev);
+                setShowRadiusMenu(false);
+                setShowHamburgerMenu(false);
+              }}
+              className={`h-9 px-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition ${
+                showMembersDrawer
+                  ? 'bg-[#1A81E5] text-white border-[#1A81E5] shadow-xs'
+                  : 'bg-slate-100 dark:bg-neutral-800 border-slate-200/80 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-200/70 dark:hover:bg-neutral-700'
+              }`}
+              title="Odadaki Kişiler ve Bilgim"
+            >
+              <Users
+                className={`w-4 h-4 shrink-0 ${
+                  showMembersDrawer
+                    ? 'text-white'
+                    : 'text-emerald-600 dark:text-emerald-400'
+                }`}
+              />
+              <span>{roomUsers.length}</span>
+            </button>
+
+            {/* Menzil Seçici Mini Açılır Butonu */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRadiusMenu((prev) => !prev);
+                  setShowMembersDrawer(false);
+                  setShowHamburgerMenu(false);
+                }}
+                className={`h-9 px-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition ${
+                  showRadiusMenu
+                    ? 'bg-[#1A81E5] text-white border-[#1A81E5] shadow-xs'
+                    : 'bg-slate-100 dark:bg-neutral-800 border-slate-200/80 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-200/70 dark:hover:bg-neutral-700'
+                }`}
+                title="Menzil Seç"
+              >
+                <span>
+                  {RADIUS_OPTIONS.find((r) => r.value === selectedRadius)
+                    ?.label || '100 m'}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </button>
+
+              {showRadiusMenu && (
+                <div className="absolute right-0 mt-2 w-36 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl border border-slate-200 dark:border-neutral-700 rounded-2xl shadow-xl py-1.5 z-50">
+                  {RADIUS_OPTIONS.map((opt) => {
+                    const locked = opt.requiresPlus && !isPlus;
+                    const isSelected = selectedRadius === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setShowRadiusMenu(false);
+                          handleSelectRadius(opt);
+                        }}
+                        className={`w-full px-3 py-2 text-xs font-medium flex items-center justify-between transition ${
+                          isSelected
+                            ? 'text-[#1A81E5] font-bold bg-blue-50/70 dark:bg-neutral-700/60'
+                            : 'text-slate-700 dark:text-neutral-200 hover:bg-slate-100 dark:hover:bg-neutral-700/50'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {locked ? (
+                          <Lock className="w-3.5 h-3.5 text-amber-500" />
+                        ) : isSelected ? (
+                          <Check className="w-3.5 h-3.5 text-[#1A81E5]" />
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Gece / Gündüz Butonu */}
             <button
               onClick={() => setIsDarkMode((prev) => !prev)}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-neutral-800 border border-slate-200/80 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-200/70 dark:hover:bg-neutral-700 transition"
+              className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-neutral-800 border border-slate-200/80 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-200/70 dark:hover:bg-neutral-700 transition"
               title={isDarkMode ? 'Aydınlık Temaya Geç' : 'Koyu Temaya Geç'}
               aria-label="Tema Değiştir"
             >
@@ -1078,9 +1107,14 @@ export default function MitemasukaPage() {
               )}
             </button>
 
+            {/* Hamburger Menü Butonu */}
             <button
-              onClick={() => setShowHamburgerMenu((prev) => !prev)}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-neutral-800 border border-slate-200/80 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-200/70 dark:hover:bg-neutral-700 transition shrink-0"
+              onClick={() => {
+                setShowHamburgerMenu((prev) => !prev);
+                setShowRadiusMenu(false);
+                setShowMembersDrawer(false);
+              }}
+              className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-neutral-800 border border-slate-200/80 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-200/70 dark:hover:bg-neutral-700 transition shrink-0"
               aria-label="Menü"
             >
               {showHamburgerMenu ? (
@@ -1089,32 +1123,6 @@ export default function MitemasukaPage() {
                 <Menu className="w-5 h-5" />
               )}
             </button>
-          </div>
-        </div>
-
-        {/* 2. Satır (Mobil Menzil Seçici) */}
-        <div className="flex sm:hidden px-3 pb-2">
-          <div className="grid grid-cols-4 w-full bg-slate-100 dark:bg-neutral-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-neutral-700/80 gap-1">
-            {RADIUS_OPTIONS.map((opt) => {
-              const locked = opt.requiresPlus && !isPlus;
-              const isSelected = selectedRadius === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  onClick={() => handleSelectRadius(opt)}
-                  className={`py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 ${
-                    isSelected
-                      ? 'bg-[#1A81E5] text-white font-semibold shadow-sm shadow-[#1A81E5]/25'
-                      : locked
-                      ? 'text-slate-500 dark:text-neutral-400 hover:text-amber-600 dark:hover:text-amber-300'
-                      : 'text-slate-600 dark:text-neutral-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span>{opt.label}</span>
-                  {locked && <Lock className="w-3 h-3 text-amber-500" />}
-                </button>
-              );
-            })}
           </div>
         </div>
       </header>
@@ -1477,11 +1485,48 @@ export default function MitemasukaPage() {
 
       {/* ODADAKİ KİŞİLER ÇEKMECESİ */}
       {showMembersDrawer && (
-        <div className="bg-slate-100/90 dark:bg-neutral-800/80 border-b border-slate-200 dark:border-neutral-700/80 px-4 py-3 text-xs space-y-2 shrink-0">
+        <div className="bg-slate-100/95 dark:bg-neutral-800/90 border-b border-slate-200 dark:border-neutral-700/80 px-4 py-3 text-xs space-y-2.5 shrink-0">
+          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/80 dark:border-neutral-700/80">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-slate-500 dark:text-neutral-400">
+                Kimliğiniz:
+              </span>
+              <span
+                style={{ color: myColor }}
+                className="font-bold truncate flex items-center gap-1.5"
+              >
+                {myUsername}
+                {isPlus && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-[#1A81E5] dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-md">
+                    Plus
+                  </span>
+                )}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMembersDrawer(false);
+                if (!isPlus) {
+                  setPaywallReason(
+                    'Rastgele User_XXX yerine kendi özel takma adınızı belirlemek için Mitemasuka Plus gereklidir.'
+                  );
+                  setShowPlusModal(true);
+                  return;
+                }
+                setNicknameInput(myUsername);
+                setShowNicknameModal(true);
+              }}
+              className="text-[11px] font-semibold text-[#1A81E5] hover:underline shrink-0"
+            >
+              Adı Değiştir
+            </button>
+          </div>
+
           <div className="flex items-center justify-between text-slate-500 dark:text-neutral-400">
-            <span className="font-semibold uppercase tracking-wider">
+            <span className="font-semibold uppercase tracking-wider text-[11px]">
               Odadaki Aktif Kişiler ({roomUsers.length}) — Özel fısıltı için
-              isme tıklayın
+              isme dokunun
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1682,7 +1727,10 @@ export default function MitemasukaPage() {
         </div>
       ) : (
         <main
-          onClick={() => showHamburgerMenu && setShowHamburgerMenu(false)}
+          onClick={() => {
+            if (showHamburgerMenu) setShowHamburgerMenu(false);
+            if (showRadiusMenu) setShowRadiusMenu(false);
+          }}
           className={`flex-1 overflow-y-auto px-4 py-3 space-y-2.5 transition-colors duration-200 ${
             CHAT_BACKGROUNDS.find((b) => b.id === chatBg)?.className ||
             CHAT_BACKGROUNDS[0].className
