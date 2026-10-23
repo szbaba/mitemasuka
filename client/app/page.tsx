@@ -167,7 +167,6 @@ const CHANNEL_PLANS = [
   },
 ];
 
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const CHANNEL_REACTIONS = ['👏', '🔥', '❤️', '👍'];
 
 const CHAT_BACKGROUNDS = [
@@ -418,7 +417,7 @@ export default function MitemasukaPage() {
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
-  const [activeMenuMsg, setActiveMenuMsg] = useState<ChatItem | null>(null);
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
   // Özel konuşmalar (fısıltılar) oda akışından ayrı tutulur (aynı anda en fazla 1 kişiyle)
   const [whispers, setWhispers] = useState<ChatItem[]>([]);
   const [dmSession, setDmSession] = useState<DmSession | null>(null);
@@ -2420,9 +2419,6 @@ export default function MitemasukaPage() {
               !new RegExp('[\\p{L}\\p{N}]', 'u').test(item.text) &&
               item.text.trim().length <= 8;
             const hasLetters = new RegExp('\\p{L}', 'u').test(item.text);
-            const activeReactions = Object.entries(item.reactions || {}).filter(
-              ([, users]) => Array.isArray(users) && users.length > 0
-            );
 
             return (
               <div
@@ -2432,8 +2428,7 @@ export default function MitemasukaPage() {
                 }`}
               >
                 <div
-                  onClick={() => setActiveMenuMsg(item)}
-                  className={`relative max-w-[90%] sm:max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm transition-colors cursor-pointer select-text ${
+                  className={`relative max-w-[90%] sm:max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm transition-colors ${
                     isWhisper
                       ? 'bg-violet-50 dark:bg-violet-950/90 border border-violet-200 dark:border-violet-500/50 text-violet-950 dark:text-violet-100'
                       : isMine
@@ -2456,8 +2451,7 @@ export default function MitemasukaPage() {
                   {!isMine && (
                     <div className="flex items-center justify-between gap-3 mb-0.5">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           openDm(item.senderClientId, item.senderName);
                         }}
                         className="text-sm font-bold hover:underline flex items-center gap-1"
@@ -2471,6 +2465,20 @@ export default function MitemasukaPage() {
                           <span className="text-[11px] text-slate-500 dark:text-neutral-400 bg-slate-100 dark:bg-neutral-900/60 px-1.5 py-0.5 rounded font-medium">
                             {distanceFromMe}m
                           </span>
+                        )}
+                        {item.senderClientId && (
+                          <button
+                            onClick={() =>
+                              handleReportUser(
+                                item.senderClientId!,
+                                item.senderName || 'Kullanıcı'
+                              )
+                            }
+                            title="Kötü Amaçlı Bildir"
+                            className="opacity-60 hover:opacity-100 text-rose-500 dark:text-rose-400"
+                          >
+                            <ShieldAlert className="w-3 h-3" />
+                          </button>
                         )}
                       </div>
                     </div>
@@ -2511,7 +2519,7 @@ export default function MitemasukaPage() {
                         className={
                           isEmojiOnly
                             ? 'text-2xl leading-none py-0.5'
-                            : 'text-[17px] font-medium whitespace-pre-wrap break-words leading-snug'
+                            : 'text-[18px] font-medium whitespace-pre-wrap break-words leading-snug'
                         }
                       >
                         {item.text}
@@ -2536,43 +2544,14 @@ export default function MitemasukaPage() {
                     </span>
                   </div>
 
-                  {activeReactions.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                      {activeReactions.map(([em, users]) => (
-                        <button
-                          key={em}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            socket?.emit('react_message', {
-                              messageId: item.id,
-                              emoji: em,
-                            });
-                          }}
-                          className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 transition ${
-                            isMine
-                              ? 'bg-white/25 text-white font-semibold'
-                              : 'bg-slate-100 dark:bg-neutral-700 text-slate-700 dark:text-neutral-200 font-semibold border border-slate-200 dark:border-neutral-600'
-                          }`}
-                        >
-                          <span>{em}</span>
-                          {users.length > 1 && (
-                            <span className="text-[11px]">{users.length}</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
                   {!isMine && (
                     <div className="mt-1.5 pt-1 border-t border-slate-100 dark:border-white/5 flex items-center justify-end gap-3 opacity-85 group-hover:opacity-100 transition">
                       {hasLetters && (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleOrTranslateMessage(item.id, item.text);
-                          }}
+                          onClick={() =>
+                            handleToggleOrTranslateMessage(item.id, item.text)
+                          }
                           className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
                         >
                           <Globe className="w-3 h-3" />
@@ -2587,13 +2566,14 @@ export default function MitemasukaPage() {
 
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           setReplyingTo({
                             id: item.id,
                             senderName: item.senderName || 'Kullanıcı',
                             text: item.text,
                           });
+                          messageInputRef.current?.focus();
+                          setTimeout(() => messageInputRef.current?.focus(), 20);
                         }}
                         className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-blue-600 dark:hover:text-white"
                       >
@@ -2707,19 +2687,13 @@ export default function MitemasukaPage() {
                       !new RegExp('[\\p{L}\\p{N}]', 'u').test(w.text) &&
                       w.text.trim().length <= 8;
                     const hasLetters = new RegExp('\\p{L}', 'u').test(w.text);
-                    const activeReactions = Object.entries(
-                      w.reactions || {}
-                    ).filter(
-                      ([, users]) => Array.isArray(users) && users.length > 0
-                    );
                     return (
                       <div
                         key={w.id}
                         className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          onClick={() => setActiveMenuMsg(w)}
-                          className={`max-w-[90%] sm:max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm cursor-pointer ${
+                          className={`max-w-[90%] sm:max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm ${
                             mine
                               ? 'bg-[#1A81E5] text-white rounded-tr-xs shadow-[#1A81E5]/20'
                               : 'bg-white dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 rounded-tl-xs border border-slate-200/90 dark:border-neutral-700'
@@ -2730,7 +2704,7 @@ export default function MitemasukaPage() {
                               className={
                                 isEmojiOnly
                                   ? 'text-2xl leading-none py-0.5'
-                                  : 'text-[17px] font-medium leading-snug whitespace-pre-wrap break-words'
+                                  : 'text-[18px] font-medium leading-snug whitespace-pre-wrap break-words'
                               }
                             >
                               {w.text}
@@ -2751,43 +2725,13 @@ export default function MitemasukaPage() {
                                 <span>{translations[trKey]}</span>
                               </div>
                             )}
-                          {activeReactions.length > 0 && (
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              {activeReactions.map(([em, users]) => (
-                                <button
-                                  key={em}
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    socket?.emit('react_message', {
-                                      messageId: w.id,
-                                      emoji: em,
-                                    });
-                                  }}
-                                  className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 transition ${
-                                    mine
-                                      ? 'bg-white/25 text-white font-semibold'
-                                      : 'bg-slate-100 dark:bg-neutral-700 text-slate-700 dark:text-neutral-200 font-semibold border border-slate-200 dark:border-neutral-600'
-                                  }`}
-                                >
-                                  <span>{em}</span>
-                                  {users.length > 1 && (
-                                    <span className="text-[11px]">
-                                      {users.length}
-                                    </span>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          )}
                           {!mine && hasLetters && (
                             <div className="mt-1.5 pt-1 border-t border-slate-100 dark:border-white/5 flex items-center justify-end">
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleOrTranslateMessage(w.id, w.text);
-                                }}
+                                onClick={() =>
+                                  handleToggleOrTranslateMessage(w.id, w.text)
+                                }
                                 className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
                               >
                                 <Globe className="w-3 h-3" />
@@ -2850,170 +2794,6 @@ export default function MitemasukaPage() {
         </main>
       )}
 
-      {/* MESAJ ÜZERİNE DOKUNUNCA AÇILAN WHATSAPP TARZI EMOJİ + YAPILABİLECEKLER MENÜSÜ */}
-      {activeMenuMsg && (
-        <div
-          onClick={() => setActiveMenuMsg(null)}
-          className="fixed inset-0 bg-slate-900/45 dark:bg-black/65 backdrop-blur-xs z-50 flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xs flex flex-col gap-2.5"
-          >
-            {/* 1. Üst Emoji Tepki Çubuğu */}
-            <div className="bg-white dark:bg-neutral-800 border border-slate-200 dark:border-neutral-700 rounded-full px-3 py-2 shadow-2xl flex items-center justify-between">
-              {QUICK_REACTIONS.map((em) => (
-                <button
-                  key={em}
-                  type="button"
-                  onClick={() => {
-                    socket?.emit('react_message', {
-                      messageId: activeMenuMsg.id,
-                      emoji: em,
-                    });
-                    setActiveMenuMsg(null);
-                  }}
-                  className="text-2xl hover:scale-125 active:scale-95 transition-transform px-1.5"
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
-
-            {/* 2. Seçili Mesaj Önizlemesi */}
-            <div
-              className={`rounded-2xl px-4 py-2.5 shadow-lg text-[16px] font-medium leading-snug max-h-32 overflow-y-auto ${
-                activeMenuMsg.senderId === myId ||
-                activeMenuMsg.senderClientId === myClientId
-                  ? 'bg-[#1A81E5] text-white self-end max-w-[90%]'
-                  : 'bg-white dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 border border-slate-200 dark:border-neutral-700 self-start max-w-[90%]'
-              }`}
-            >
-              {activeMenuMsg.text}
-            </div>
-
-            {/* 3. Yapılabilecekler Kutusu */}
-            <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur-xl border border-slate-200 dark:border-neutral-700 rounded-2xl shadow-2xl overflow-hidden divide-y divide-slate-100 dark:divide-neutral-700/70 text-sm font-medium text-slate-800 dark:text-neutral-100">
-              {activeView === 'room' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReplyingTo({
-                      id: activeMenuMsg.id,
-                      senderName: activeMenuMsg.senderName || myUsername,
-                      text: activeMenuMsg.text,
-                    });
-                    setActiveMenuMsg(null);
-                  }}
-                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
-                >
-                  <Reply className="w-4 h-4 text-slate-500 dark:text-neutral-400" />
-                  <span>{t.reply}</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard?.writeText(activeMenuMsg.text);
-                  setActiveMenuMsg(null);
-                }}
-                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
-              >
-                <Copy className="w-4 h-4 text-slate-500 dark:text-neutral-400" />
-                <span>{t.copyBtn}</span>
-              </button>
-
-              {activeMenuMsg.senderId !== myId &&
-                activeMenuMsg.senderClientId !== myClientId &&
-                new RegExp('\\p{L}', 'u').test(activeMenuMsg.text) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleToggleOrTranslateMessage(
-                        activeMenuMsg.id,
-                        activeMenuMsg.text
-                      );
-                      setActiveMenuMsg(null);
-                    }}
-                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
-                  >
-                    <Globe className="w-4 h-4 text-[#1A81E5]" />
-                    <span>
-                      {translations[`${activeMenuMsg.id}_${uiLang}`] &&
-                      !hiddenTranslationIds[`${activeMenuMsg.id}_${uiLang}`]
-                        ? t.original
-                        : t.translate}
-                    </span>
-                  </button>
-                )}
-
-              {activeMenuMsg.senderId !== myId &&
-                activeMenuMsg.senderClientId !== myClientId &&
-                activeMenuMsg.senderClientId && (
-                  <>
-                    {activeView === 'room' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const cid = activeMenuMsg.senderClientId;
-                          const sname = activeMenuMsg.senderName;
-                          setActiveMenuMsg(null);
-                          openDm(cid, sname);
-                        }}
-                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
-                      >
-                        <MessageSquareLock className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                        <span>
-                          {t.tabPrivate} ({activeMenuMsg.senderName})
-                        </span>
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (activeMenuMsg.senderClientId) {
-                          toggleBlockUser(
-                            activeMenuMsg.senderClientId,
-                            activeMenuMsg.senderName || 'Kullanıcı'
-                          );
-                        }
-                        setActiveMenuMsg(null);
-                      }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left text-amber-600 dark:text-amber-400"
-                    >
-                      <Ban className="w-4 h-4" />
-                      <span>
-                        {blockedClientIds[activeMenuMsg.senderClientId]
-                          ? t.unblockBtn
-                          : 'Engelle'}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (activeMenuMsg.senderClientId) {
-                          handleReportUser(
-                            activeMenuMsg.senderClientId,
-                            activeMenuMsg.senderName || 'Kullanıcı'
-                          );
-                        }
-                        setActiveMenuMsg(null);
-                      }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition text-left text-rose-600 dark:text-rose-400"
-                    >
-                      <ShieldAlert className="w-4 h-4" />
-                      <span>Kötü Amaçlı Bildir</span>
-                    </button>
-                  </>
-                )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* YANITLAMA ÇUBUĞU (özel konuşmalarda yanıtlama yok) */}
       {replyingTo && activeView === 'room' && (
         <div className="bg-slate-100 dark:bg-neutral-800 px-4 py-2 border-t border-slate-200 dark:border-neutral-700 flex items-center justify-between text-xs">
@@ -3039,6 +2819,7 @@ export default function MitemasukaPage() {
       <footer className="bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl px-3 pt-2.5 pb-2 border-t border-slate-200/80 dark:border-neutral-800 shrink-0 space-y-2 transition-colors">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
           <input
+            ref={messageInputRef}
             type="text"
             enterKeyHint="send"
             value={inputText}
