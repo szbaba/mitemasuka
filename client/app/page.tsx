@@ -2007,16 +2007,16 @@ export default function MitemasukaPage() {
             </div>
             <div className="flex items-center justify-between gap-2">
               <a
-                href="mailto:suleymanbaba@gmail.com"
+                href="mailto:info@mitemasuka.com"
                 className="flex items-center gap-2 text-xs text-slate-600 dark:text-neutral-300 hover:text-[#1A81E5] dark:hover:text-blue-300 transition min-w-0"
               >
                 <Mail className="w-4 h-4 shrink-0" />
-                <span className="truncate">suleymanbaba@gmail.com</span>
+                <span className="truncate">info@mitemasuka.com</span>
               </a>
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard?.writeText('suleymanbaba@gmail.com');
+                  navigator.clipboard?.writeText('info@mitemasuka.com');
                   setCopiedEmail(true);
                   setTimeout(() => setCopiedEmail(false), 2000);
                 }}
