@@ -498,6 +498,32 @@ export default function MitemasukaPage() {
     [nearbyChannels, activeChannelId]
   );
 
+  // Art arda gelen giriş/çıkış bildirimlerini (3 ve üzeri) tek satırda grupla
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const groupedMessages = React.useMemo(() => {
+    type Entry = { item?: ChatItem; group?: ChatItem[] };
+    const out: Entry[] = [];
+    let run: ChatItem[] = [];
+    const flush = () => {
+      if (run.length >= 3) out.push({ group: run });
+      else run.forEach((r) => out.push({ item: r }));
+      run = [];
+    };
+    for (const m of messages) {
+      if (
+        m.kind === 'system' &&
+        (m.systemType === 'join' || m.systemType === 'leave')
+      ) {
+        run.push(m);
+      } else {
+        flush();
+        out.push({ item: m });
+      }
+    }
+    flush();
+    return out;
+  }, [messages]);
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -1910,7 +1936,43 @@ export default function MitemasukaPage() {
             </div>
           </div>
 
-          {messages.map((item) => {
+          {groupedMessages.map((entry) => {
+            if (entry.group) {
+              const grp = entry.group;
+              const gid = grp[0].id;
+              const open = !!expandedGroups[gid];
+              const joins = grp.filter((g) => g.systemType === 'join').length;
+              const leaves = grp.length - joins;
+              const parts: string[] = [];
+              if (joins) parts.push(t.groupJoined.replace('{n}', String(joins)));
+              if (leaves) parts.push(t.groupLeft.replace('{n}', String(leaves)));
+              return (
+                <div key={`grp_${gid}`} className="flex flex-col items-center my-1.5 gap-1.5">
+                  <button
+                    onClick={() =>
+                      setExpandedGroups((prev) => ({ ...prev, [gid]: !prev[gid] }))
+                    }
+                    className="text-xs px-3 py-1 rounded-full border shadow-2xs font-medium bg-white dark:bg-neutral-800 text-slate-600 dark:text-neutral-300 border-slate-200 dark:border-neutral-700 hover:bg-slate-50 dark:hover:bg-neutral-700 transition"
+                  >
+                    👥 {parts.join(' · ')} {open ? '▴' : '▾'}
+                  </button>
+                  {open &&
+                    grp.map((g) => (
+                      <span
+                        key={g.id}
+                        className={`text-[11px] px-2.5 py-0.5 rounded-full border font-medium ${
+                          g.systemType === 'join'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40'
+                            : 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-700/40'
+                        }`}
+                      >
+                        {localizeSystemMessage(g.text, uiLang)}
+                      </span>
+                    ))}
+                </div>
+              );
+            }
+            const item = entry.item as ChatItem;
             if (item.kind === 'system') {
               const badgeStyle =
                 item.systemType === 'join'
