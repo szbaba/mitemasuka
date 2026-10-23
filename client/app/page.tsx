@@ -442,6 +442,11 @@ export default function MitemasukaPage() {
   const [reportedClientIds, setReportedClientIds] = useState<
     Record<string, boolean>
   >({});
+  const [reportTarget, setReportTarget] = useState<{
+    clientId: string;
+    username: string;
+    done?: boolean;
+  } | null>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -1400,14 +1405,30 @@ export default function MitemasukaPage() {
   };
 
   const handleReportUser = (targetClientId: string, targetName: string) => {
-    if (!socket || !targetClientId || targetClientId === myClientId) return;
-    if (reportedClientIds[targetClientId]) return;
+    if (!targetClientId || targetClientId === myClientId) return;
+    setReportTarget({
+      clientId: targetClientId,
+      username: targetName,
+      done: Boolean(reportedClientIds[targetClientId]),
+    });
+  };
 
-    socket.emit('report_user', { targetClientId });
-    setReportedClientIds((prev) => ({ ...prev, [targetClientId]: true }));
-    alert(
-      `${targetName} bildirildi. Odadaki 3 farklı kişi şikayet ederse otomatik olarak susturulacaktır.`
-    );
+  const confirmReportUser = (alsoBlock: boolean) => {
+    if (!reportTarget) return;
+    const { clientId, username } = reportTarget;
+    if (socket && !reportedClientIds[clientId]) {
+      socket.emit('report_user', { targetClientId: clientId });
+      setReportedClientIds((prev) => ({ ...prev, [clientId]: true }));
+    }
+    if (alsoBlock && !blockedClientIds[clientId]) {
+      toggleBlockUser(clientId, username);
+    }
+    setReportTarget({ clientId, username, done: true });
+    setTimeout(() => {
+      setReportTarget((prev) =>
+        prev && prev.clientId === clientId ? null : prev
+      );
+    }, 1200);
   };
 
   const formatTime = (iso: string) => {
@@ -3612,6 +3633,74 @@ export default function MitemasukaPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL 5: KALKAN İKONUNA BASINCA AÇILAN BİLDİRİM ONAY BALONU */}
+      {reportTarget && (
+        <div
+          onClick={() => setReportTarget(null)}
+          className="fixed inset-0 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative"
+          >
+            <button
+              type="button"
+              onClick={() => setReportTarget(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-neutral-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 pr-6">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug">
+                {t.reportModalTitle.replace('{name}', reportTarget.username)}
+              </h3>
+            </div>
+
+            {reportTarget.done ? (
+              <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-sm font-semibold px-4 py-3 rounded-2xl text-center">
+                {t.reportSuccessText}
+              </div>
+            ) : (
+              <>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-neutral-300 leading-relaxed bg-slate-50 dark:bg-neutral-800/80 p-3.5 rounded-2xl border border-slate-200/80 dark:border-neutral-700">
+                  {t.reportModalDesc}
+                </p>
+
+                <div className="flex flex-col gap-2 pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setReportTarget(null)}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-neutral-800 hover:bg-slate-200 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 font-semibold text-xs sm:text-sm transition"
+                    >
+                      {t.dmCancelBtn}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => confirmReportUser(false)}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm transition shadow-sm"
+                    >
+                      {t.reportConfirmBtn}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => confirmReportUser(true)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 font-semibold text-xs transition"
+                  >
+                    {t.reportAndBlockBtn}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

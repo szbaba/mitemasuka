@@ -228,6 +228,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'Kopyala',
     copiedBtn: 'Kopyalandı',
     unblockBtn: 'Engeli Kaldır',
+    reportModalTitle: '{name} adlı kişiyi bildiriyorsunuz',
+    reportModalDesc:
+      'Bu kişinin rahatsız edici veya kurallara aykırı davrandığını bildiriyorsunuz. Odadaki 3 farklı kişi şikayet ederse kullanıcı otomatik olarak susturulacaktır.',
+    reportConfirmBtn: 'Bildir',
+    reportAndBlockBtn: 'Bildir ve Engelle',
+    reportSuccessText: 'Bildiriminiz alındı.',
   },
   en: {
     doYouSeeMe: 'Do You See Me?',
@@ -349,6 +355,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'Copy',
     copiedBtn: 'Copied',
     unblockBtn: 'Unblock',
+    reportModalTitle: 'Reporting {name}',
+    reportModalDesc:
+      'You are reporting this user for disruptive or abusive behavior. If 3 different people in the room report them, they will be automatically muted.',
+    reportConfirmBtn: 'Report',
+    reportAndBlockBtn: 'Report & Block',
+    reportSuccessText: 'Your report has been submitted.',
   },
   ja: {
     doYouSeeMe: '見てますか？',
@@ -467,6 +479,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'コピー',
     copiedBtn: '完了',
     unblockBtn: '解除',
+    reportModalTitle: '{name}さんを通報します',
+    reportModalDesc:
+      '迷惑行為やルール違反として通報します。ルーム内の3人が通報すると自動的にミュートされます。',
+    reportConfirmBtn: '通報する',
+    reportAndBlockBtn: '通報してブロック',
+    reportSuccessText: '通報を受け付けました。',
   },
   de: {
     doYouSeeMe: 'Siehst du mich?',
@@ -586,6 +604,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'Kopieren',
     copiedBtn: 'Kopiert',
     unblockBtn: 'Freigeben',
+    reportModalTitle: '{name} melden',
+    reportModalDesc:
+      'Du meldest diese Person wegen störendem Verhalten. Wenn 3 verschiedene Personen im Raum sie melden, wird sie automatisch stummgeschaltet.',
+    reportConfirmBtn: 'Melden',
+    reportAndBlockBtn: 'Melden & Blockieren',
+    reportSuccessText: 'Deine Meldung wurde gesendet.',
   },
   es: {
     doYouSeeMe: '¿Me ves?',
@@ -704,6 +728,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'Copiar',
     copiedBtn: 'Copiado',
     unblockBtn: 'Desbloquear',
+    reportModalTitle: 'Reportando a {name}',
+    reportModalDesc:
+      'Estás reportando a esta persona por comportamiento molesto. Si 3 personas diferentes en la sala la reportan, será silenciada automáticamente.',
+    reportConfirmBtn: 'Reportar',
+    reportAndBlockBtn: 'Reportar y bloquear',
+    reportSuccessText: 'Tu reporte ha sido enviado.',
   },
   fr: {
     doYouSeeMe: 'Tu me vois ?',
@@ -824,6 +854,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'Copier',
     copiedBtn: 'Copié',
     unblockBtn: 'Débloquer',
+    reportModalTitle: 'Signaler {name}',
+    reportModalDesc:
+      'Vous signalez cette personne pour comportement inapproprié. Si 3 personnes du salon la signalent, elle sera automatiquement mise en sourdine.',
+    reportConfirmBtn: 'Signaler',
+    reportAndBlockBtn: 'Signaler et bloquer',
+    reportSuccessText: 'Votre signalement a été envoyé.',
   },
   ru: {
     doYouSeeMe: 'Ты видишь меня?',
@@ -943,6 +979,12 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'Копировать',
     copiedBtn: 'Скопировано',
     unblockBtn: 'Разблокировать',
+    reportModalTitle: 'Пожаловаться на {name}',
+    reportModalDesc:
+      'Вы отправляете жалобу на нарушение правил. Если 3 разных участника комнаты пожалуются, пользователь будет автоматически заглушен.',
+    reportConfirmBtn: 'Пожаловаться',
+    reportAndBlockBtn: 'Пожаловаться и скрыть',
+    reportSuccessText: 'Жалоба отправлена.',
   },
   ar: {
     doYouSeeMe: 'هل تراني؟',
@@ -1061,5 +1103,11 @@ export const UI_TEXT: Record<LangCode, Record<string, any>> = {
     copyBtn: 'نسخ',
     copiedBtn: 'تم النسخ',
     unblockBtn: 'إلغاء الحظر',
+    reportModalTitle: 'الإبلاغ عن {name}',
+    reportModalDesc:
+      'أنت تبلّغ عن هذا المستخدم بسبب سلوك مزعج. إذا أبلغ عنه 3 أشخاص مختلفين في الغرفة فسيتم كتمه تلقائياً.',
+    reportConfirmBtn: 'إبلاغ',
+    reportAndBlockBtn: 'إبلاغ وحظر',
+    reportSuccessText: 'تم استلام بلاغك.',
   },
 };
