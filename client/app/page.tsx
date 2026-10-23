@@ -1644,18 +1644,18 @@ export default function MitemasukaPage() {
                 setPaywallReason(null);
                 setShowPlusModal(true);
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold hover:bg-blue-100/70 dark:hover:bg-blue-900/50 transition"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#F3F6FA] dark:bg-[#232933] border border-[#DCE5F0] dark:border-[#343E4D] text-[#4A6580] dark:text-[#B8CAE0] font-semibold hover:bg-[#EAF0F7] dark:hover:bg-[#2A323F] transition"
             >
               <span className="flex items-center gap-2 text-left">
-                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <Sparkles className="w-4 h-4 text-[#6E8CA8] dark:text-[#94AFC9] shrink-0" />
                 <span>{isPlus ? t.plusActive : t.upgradeToPlus}</span>
               </span>
               <span className="flex flex-col items-end shrink-0">
-                <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
+                <span className="text-xs bg-[#DCE7F3] dark:bg-[#323E4F] text-[#3B5570] dark:text-[#C5D5E8] px-2 py-0.5 rounded-full font-bold">
                   {isPlus ? 'VIP' : t.upgradeBadge}
                 </span>
                 {!isPlus && (
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                  <span className="text-[10px] text-[#6B8577] dark:text-[#9BB5A6] font-semibold mt-0.5">
                     {t.freeForNow}
                   </span>
                 )}
@@ -1668,17 +1668,17 @@ export default function MitemasukaPage() {
                 setShowHamburgerMenu(false);
                 setShowCreateChannelModal(true);
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 font-semibold hover:bg-rose-100/70 dark:hover:bg-rose-900/50 transition"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#F9F4F1] dark:bg-[#2B2525] border border-[#E8DCD5] dark:border-[#403535] text-[#7D5A50] dark:text-[#DFC2BA] font-semibold hover:bg-[#F3EAE5] dark:hover:bg-[#342C2C] transition"
             >
               <span className="flex items-center gap-2 text-left">
-                <Megaphone className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                <Megaphone className="w-4 h-4 text-[#B08377] dark:text-[#C99E93] shrink-0" />
                 <span>{t.createChannelMenu}</span>
               </span>
               <span className="flex flex-col items-end shrink-0">
-                <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-bold">
+                <span className="text-[10px] bg-[#EBDAD3] dark:bg-[#423333] text-[#6E4B42] dark:text-[#E8C8C0] px-2 py-0.5 rounded-full font-bold">
                   PRO
                 </span>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                <span className="text-[10px] text-[#6B8577] dark:text-[#9BB5A6] font-semibold mt-0.5">
                   {t.freeForNow}
                 </span>
               </span>
@@ -1689,7 +1689,7 @@ export default function MitemasukaPage() {
           <div className="px-3.5 py-2.5 space-y-2">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-neutral-300">
               <span className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-[#1A81E5]" />
+                <Globe className="w-4 h-4 text-[#6E8CA8] dark:text-[#94AFC9]" />
                 <span>{t.appLanguage}</span>
               </span>
               <span className="text-[10px] text-slate-400 font-normal">
@@ -1706,7 +1706,7 @@ export default function MitemasukaPage() {
                     onClick={() => setUiLang(lng.code)}
                     className={`py-1.5 rounded-xl border text-xs font-semibold transition ${
                       active
-                        ? 'border-[#1A81E5] bg-[#1A81E5] text-white shadow-2xs'
+                        ? 'border-[#B8CDE3] dark:border-[#475870] bg-[#DCE7F3] dark:bg-[#323E4F] text-[#2F4B69] dark:text-[#D0DFEE] shadow-2xs'
                         : 'border-slate-200 dark:border-neutral-700 bg-slate-50/70 dark:bg-neutral-900/60 text-slate-700 dark:text-neutral-300 hover:border-slate-300'
                     }`}
                     title={lng.label}
@@ -1725,13 +1725,13 @@ export default function MitemasukaPage() {
               className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <Globe className="w-4 h-4 text-[#6E9482] dark:text-[#93B5A4] shrink-0" />
                 <span className="font-medium">{t.autoTranslateMenu}</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   autoTranslate
-                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    ? 'bg-[#E6F0EB] dark:bg-[#25302B] text-[#49735E] dark:text-[#A3C4B3]'
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
@@ -1746,7 +1746,7 @@ export default function MitemasukaPage() {
               }}
               className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
             >
-              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <Info className="w-4 h-4 text-[#6E8CA8] dark:text-[#94AFC9] shrink-0" />
               <div>
                 <div className="font-semibold flex items-center gap-1.5 text-slate-900 dark:text-white">
                   <span>{t.whatIsMitemasuka}</span>
@@ -1764,7 +1764,7 @@ export default function MitemasukaPage() {
               }}
               className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
             >
-              <QrCode className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <QrCode className="w-4 h-4 text-[#6E9482] dark:text-[#93B5A4] shrink-0" />
               <div>
                 <div className="font-semibold text-slate-900 dark:text-white">
                   {t.addNearbyQr}
@@ -1791,10 +1791,10 @@ export default function MitemasukaPage() {
               className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <Edit3 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <Edit3 className="w-4 h-4 text-[#6E8CA8] dark:text-[#94AFC9]" />
                 <span>{t.changeMyNickname}</span>
               </span>
-              {!isPlus && <Lock className="w-3.5 h-3.5 text-amber-500" />}
+              {!isPlus && <Lock className="w-3.5 h-3.5 text-[#C49B66] dark:text-[#D4B07F]" />}
             </button>
 
             <button
@@ -1812,16 +1812,16 @@ export default function MitemasukaPage() {
               className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <Ghost className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                <Ghost className="w-4 h-4 text-[#8C7DA8] dark:text-[#AEA0C8]" />
                 <span>{t.ghostModeMenu}</span>
               </span>
               {!isPlus ? (
-                <Lock className="w-3.5 h-3.5 text-amber-500" />
+                <Lock className="w-3.5 h-3.5 text-[#C49B66] dark:text-[#D4B07F]" />
               ) : (
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                     ghostMode
-                      ? 'bg-violet-100 dark:bg-violet-500/30 text-violet-700 dark:text-violet-300'
+                      ? 'bg-[#EDE8F5] dark:bg-[#2D2838] text-[#5E4F7A] dark:text-[#C5B8DE]'
                       : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                   }`}
                 >
@@ -1846,7 +1846,7 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 {roomNotifEnabled ? (
-                  <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <Volume2 className="w-4 h-4 text-[#6E9482] dark:text-[#93B5A4] shrink-0" />
                 ) : (
                   <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
@@ -1855,7 +1855,7 @@ export default function MitemasukaPage() {
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   roomNotifEnabled
-                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    ? 'bg-[#E6F0EB] dark:bg-[#25302B] text-[#49735E] dark:text-[#A3C4B3]'
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
@@ -1879,7 +1879,7 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 {whisperNotifEnabled ? (
-                  <Volume2 className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                  <Volume2 className="w-4 h-4 text-[#8C7DA8] dark:text-[#AEA0C8] shrink-0" />
                 ) : (
                   <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
@@ -1888,7 +1888,7 @@ export default function MitemasukaPage() {
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   whisperNotifEnabled
-                    ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300'
+                    ? 'bg-[#EDE8F5] dark:bg-[#2D2838] text-[#5E4F7A] dark:text-[#C5B8DE]'
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
@@ -1912,7 +1912,7 @@ export default function MitemasukaPage() {
             >
               <span className="flex items-center gap-3">
                 {presenceNotifEnabled ? (
-                  <Volume2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <Volume2 className="w-4 h-4 text-[#6E8CA8] dark:text-[#94AFC9] shrink-0" />
                 ) : (
                   <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
@@ -1921,7 +1921,7 @@ export default function MitemasukaPage() {
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   presenceNotifEnabled
-                    ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
+                    ? 'bg-[#E5EEF7] dark:bg-[#232933] text-[#4A6580] dark:text-[#B8CAE0]'
                     : 'bg-slate-100 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400'
                 }`}
               >
@@ -1937,11 +1937,11 @@ export default function MitemasukaPage() {
               className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                <ShieldAlert className="w-4 h-4 text-[#B08377] dark:text-[#C99E93]" />
                 <span>{t.rulesAndBlocked}</span>
               </span>
               {Object.keys(blockedClientIds).length > 0 && (
-                <span className="text-xs bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-[#F3E6E2] dark:bg-[#382C2C] text-[#7D5A50] dark:text-[#DFC2BA] px-2 py-0.5 rounded-full">
                   {Object.keys(blockedClientIds).length}
                 </span>
               )}
@@ -1952,7 +1952,7 @@ export default function MitemasukaPage() {
           <div className="px-3.5 py-2.5 space-y-2">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-neutral-300">
               <span className="flex items-center gap-2">
-                <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <Palette className="w-4 h-4 text-[#6E8CA8] dark:text-[#94AFC9]" />
                 <span>{t.chatBgTitle}</span>
               </span>
               <span className="text-[10px] text-slate-400 font-normal">
@@ -1969,7 +1969,7 @@ export default function MitemasukaPage() {
                     onClick={() => setChatBg(bgOpt.id)}
                     className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-medium transition ${
                       active
-                        ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold shadow-2xs'
+                        ? 'border-[#B8CDE3] dark:border-[#475870] bg-[#DCE7F3] dark:bg-[#323E4F] text-[#2F4B69] dark:text-[#D0DFEE] font-bold shadow-2xs'
                         : 'border-slate-200 dark:border-neutral-700 bg-slate-50/70 dark:bg-neutral-900/60 text-slate-600 dark:text-neutral-300 hover:border-slate-300'
                     }`}
                   >
@@ -2909,9 +2909,9 @@ export default function MitemasukaPage() {
             }}
             className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border transition shrink-0 ${
               isPlus
-                ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-medium'
+                ? 'bg-[#F3F6FA] dark:bg-[#232933] border-[#DCE5F0] dark:border-[#343E4D] text-[#4A6580] dark:text-[#B8CAE0] font-medium'
                 : remainingQuota <= 3
-                ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-300 dark:border-rose-500/40 text-rose-700 dark:text-rose-300'
+                ? 'bg-[#F9F4F1] dark:bg-[#2B2525] border-[#E8DCD5] dark:border-[#403535] text-[#7D5A50] dark:text-[#DFC2BA]'
                 : 'bg-slate-100 dark:bg-neutral-800 border-slate-200 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -2923,7 +2923,7 @@ export default function MitemasukaPage() {
                   {remainingQuota}
                 </strong>
                 /{dailyLimit} {t.messagesUnit} •{' '}
-                <span className="text-[#1A81E5] font-semibold">Plus</span>
+                <span className="text-[#4A6580] dark:text-[#B8CAE0] font-semibold">Plus</span>
               </span>
             )}
           </button>
