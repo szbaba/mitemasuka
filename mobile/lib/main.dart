@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocket;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,7 +10,6 @@ import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -194,7 +194,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
 
   String _myClientId = '';
   String _myId = '';
-  String _myUsername = 'Baglaniyor...';
+  String _myUsername = 'Bağlanıyor...';
   bool _isPlus = false;
   bool _ghostMode = false;
   bool _isBanned = false;
@@ -202,14 +202,16 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   int _remainingQuota = 20;
 
   bool _isConnected = false;
-  WebSocketChannel? _channel;
+  bool _isConnecting = false;
+  WebSocket? _ws;
   StreamSubscription? _wsSub;
+  StreamSubscription<Position>? _posSub;
   Timer? _reconnectTimer;
+  Timer? _pingTimer;
 
   double? _baseLat;
   double? _baseLng;
-  double _simOffsetMeters = 0;
-  bool _showSimBar = false;
+  String? _connectedRegion;
 
   int _selectedRadius = 100;
   List<RoomUser> _roomUsers = [];
@@ -245,8 +247,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   @override
   void dispose() {
     _reconnectTimer?.cancel();
+    _pingTimer?.cancel();
+    _posSub?.cancel();
     _wsSub?.cancel();
-    _channel?.sink.close();
+    _ws?.close();
     _inputController.dispose();
     _inputFocusNode.dispose();
     _scrollController.dispose();
@@ -278,11 +282,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     }
 
     await _initLocation();
-    _connectWebSocket();
   }
-
-  double get _effectiveLat => (_baseLat ?? 41.0082) + (_simOffsetMeters / 111320.0);
-  double get _effectiveLng => _baseLng ?? 28.9784;
 
   String get _regionKey {
     if (_baseLat != null && _baseLng != null) {
@@ -294,13 +294,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   Future<void> _initLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        setState(() {
-          _baseLat = 41.0082;
-          _baseLng = 28.9784;
-        });
-        return;
-      }
+      if (!serviceEnabled) return;
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -308,10 +302,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        setState(() {
-          _baseLat = 41.0082;
-          _baseLng = 28.9784;
-        });
         return;
       }
 
@@ -320,47 +310,88 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           accuracy: LocationAccuracy.high,
         ),
       );
-      setState(() {
-        _baseLat = pos.latitude;
-        _baseLng = pos.longitude;
+      _updateCoordinates(pos.latitude, pos.longitude);
+
+      _posSub?.cancel();
+      _posSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        ),
+      ).listen((Position p) {
+        _updateCoordinates(p.latitude, p.longitude);
       });
-      _joinRoomIfReady();
-    } catch (_) {
-      setState(() {
-        _baseLat ??= 41.0082;
-        _baseLng ??= 28.9784;
-      });
+    } catch (_) {}
+  }
+
+  void _updateCoordinates(double lat, double lng) {
+    final prevRegion = _connectedRegion;
+    setState(() {
+      _baseLat = lat;
+      _baseLng = lng;
+    });
+    final nextRegion = _regionKey;
+    debugPrint('[Mitemasuka] GPS Updated: lat=$lat, lng=$lng, region=$nextRegion');
+    if ((!_isConnected && !_isConnecting) || (prevRegion != null && prevRegion != nextRegion)) {
+      _connectWebSocket();
+    } else if (_isConnected) {
       _joinRoomIfReady();
     }
   }
 
-  void _connectWebSocket() {
-    _wsSub?.cancel();
-    _channel?.sink.close();
+  Future<void> _connectWebSocket() async {
+    if (_baseLat == null || _baseLng == null || _isConnecting) return;
+    _isConnecting = true;
+    _reconnectTimer?.cancel();
+    _pingTimer?.cancel();
+    await _wsSub?.cancel();
+    try {
+      await _ws?.close();
+    } catch (_) {}
 
-    final uri = Uri.parse(
-      '$_wsBaseUrl?clientId=${Uri.encodeComponent(_myClientId)}&region=${Uri.encodeComponent(_regionKey)}',
-    );
+    final reg = _regionKey;
+    _connectedRegion = reg;
+    final url =
+        '$_wsBaseUrl/?clientId=${Uri.encodeComponent(_myClientId)}&region=${Uri.encodeComponent(reg)}';
+    debugPrint('[Mitemasuka] Connecting WebSocket -> $url');
 
     try {
-      final ch = WebSocketChannel.connect(uri);
-      _channel = ch;
+      final ws = await WebSocket.connect(
+        url,
+        headers: {
+          'Origin': 'https://mitemasuka.com',
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
+        },
+      ).timeout(const Duration(seconds: 12));
+
+      ws.pingInterval = const Duration(seconds: 20);
+      _ws = ws;
+      _isConnecting = false;
+      if (!mounted) {
+        ws.close();
+        return;
+      }
+
       setState(() {
         _isConnected = true;
       });
+      debugPrint('[Mitemasuka] WebSocket Connected! Joining room...');
 
-      _wsSub = ch.stream.listen(
+      _wsSub = ws.listen(
         (raw) {
           _handleWsMessage(raw.toString());
         },
         onDone: () {
+          debugPrint('[Mitemasuka] WebSocket Closed (code=${ws.closeCode})');
           if (!mounted) return;
           setState(() {
             _isConnected = false;
           });
           _scheduleReconnect();
         },
-        onError: (_) {
+        onError: (err) {
+          debugPrint('[Mitemasuka] WebSocket Stream Error: $err');
           if (!mounted) return;
           setState(() {
             _isConnected = false;
@@ -370,8 +401,21 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       );
 
       _joinRoomIfReady();
-    } catch (_) {
-      _scheduleReconnect();
+
+      _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+        if (_isConnected && _baseLat != null && _baseLng != null) {
+          _joinRoomIfReady();
+        }
+      });
+    } catch (e) {
+      debugPrint('[Mitemasuka] WebSocket Connect Failed: $e');
+      _isConnecting = false;
+      if (mounted) {
+        setState(() {
+          _isConnected = false;
+        });
+        _scheduleReconnect();
+      }
     }
   }
 
@@ -383,17 +427,20 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   }
 
   void _emit(String event, [Map<String, dynamic>? data]) {
-    if (_channel == null) return;
+    if (_ws == null || _ws!.readyState != WebSocket.open) return;
     try {
-      _channel!.sink.add(jsonEncode({'event': event, 'data': data ?? {}}));
-    } catch (_) {}
+      _ws!.add(jsonEncode({'event': event, 'data': data ?? {}}));
+    } catch (e) {
+      debugPrint('[Mitemasuka] Emit Error ($event): $e');
+    }
   }
 
   void _joinRoomIfReady() {
     if (!_isConnected || _baseLat == null || _baseLng == null) return;
-    _emit('join_room', {
-      'lat': _effectiveLat,
-      'lng': _effectiveLng,
+    debugPrint('[Mitemasuka] Emitting update_location: lat=$_baseLat, lng=$_baseLng, radius=$_selectedRadius');
+    _emit('update_location', {
+      'lat': _baseLat!,
+      'lng': _baseLng!,
       'radius': _selectedRadius,
     });
   }
@@ -403,6 +450,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       final event = decoded['event']?.toString() ?? '';
       final data = decoded['data'];
+      debugPrint('[Mitemasuka] WS Event <- $event');
 
       if (event == 'identity' && data is Map<String, dynamic>) {
         setState(() {
@@ -549,12 +597,14 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   }
 
   int? _distanceFromMe(double? lat, double? lng) {
-    if (lat == null || lng == null) return null;
+    if (lat == null || lng == null || _baseLat == null || _baseLng == null) {
+      return null;
+    }
     const R = 6371e3;
-    final p1 = _effectiveLat * math.pi / 180;
+    final p1 = _baseLat! * math.pi / 180;
     final p2 = lat * math.pi / 180;
-    final dp = (lat - _effectiveLat) * math.pi / 180;
-    final dl = (lng - _effectiveLng) * math.pi / 180;
+    final dp = (lat - _baseLat!) * math.pi / 180;
+    final dl = (lng - _baseLng!) * math.pi / 180;
     final a = math.sin(dp / 2) * math.sin(dp / 2) +
         math.cos(p1) * math.cos(p2) * math.sin(dl / 2) * math.sin(dl / 2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
@@ -593,8 +643,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
 
   String? get _dmPeerClientId {
     if (_dmSession != null) {
-      final a = _dmSession!['aClientId']?.toString();
-      final b = _dmSession!['bClientId']?.toString();
+      final a = (_dmSession!['initiatorClientId'] ?? _dmSession!['aClientId'])?.toString();
+      final b = (_dmSession!['recipientClientId'] ?? _dmSession!['bClientId'])?.toString();
       return a == _myClientId ? b : a;
     }
     return _dmDraftPeer?.clientId;
@@ -602,10 +652,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
 
   String? get _dmPeerName {
     if (_dmSession != null) {
-      final a = _dmSession!['aClientId']?.toString();
+      final a = (_dmSession!['initiatorClientId'] ?? _dmSession!['aClientId'])?.toString();
       return a == _myClientId
-          ? _dmSession!['bName']?.toString()
-          : _dmSession!['aName']?.toString();
+          ? (_dmSession!['recipientName'] ?? _dmSession!['bName'])?.toString()
+          : (_dmSession!['initiatorName'] ?? _dmSession!['aName'])?.toString();
     }
     return _dmDraftPeer?.username;
   }
@@ -635,15 +685,15 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
-          'Mitemasuka Topluluk Kurallari',
+          'Mitemasuka Topluluk Kuralları',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         content: const SingleChildScrollView(
           child: Text(
-            'Mitemasuka, 100 metre cevrenizdeki gercek kisilerle anlik iletisim kurmanizi saglar.\n\n'
-            '• Taciz, kufur, nefret soylemi ve spam kesinlikle yasaktir.\n'
-            '• Rahatsiz edici kullanicilari mesaj uzerindeki kalkan ikonuyla bildirebilir veya engelleyebilirsiniz.\n'
-            '• 3 farkli kisi tarafindan bildirilen kullanicilar o gun boyunca otomatik olarak susturulur.',
+            'Mitemasuka, 100 metre çevrenizdeki gerçek kişilerle anlık iletişim kurmanızı sağlar.\n\n'
+            '• Taciz, küfür, nefret söylemi ve spam kesinlikle yasaktır.\n'
+            '• Rahatsız edici kullanıcıları mesaj üzerindeki kalkan ikonuyla bildirebilir veya engelleyebilirsiniz.\n'
+            '• 3 farklı kişi tarafından bildirilen kullanıcılar o gün boyunca otomatik olarak susturulur.',
             style: TextStyle(fontSize: 14, height: 1.45),
           ),
         ),
@@ -656,7 +706,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               await prefs.setBool('mitemasuka_eula_v1', true);
               nav.pop();
             },
-            child: const Text('Kabul Ediyorum ve Basla'),
+            child: const Text('Kabul Ediyorum ve Başla'),
           ),
         ],
       ),
@@ -674,20 +724,20 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '$targetName — Kullaniciyi Bildir',
+                '$targetName — Kullanıcıyı Bildir',
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
           ],
         ),
         content: const Text(
-          'Bu kisiyi topluluk kurallarini ihlal ettigi icin bildiriyorsunuz. Odada 3 farkli kisi bildirirse kullanici o gun boyunca otomatik olarak susturulur.',
+          'Bu kişiyi topluluk kurallarını ihlal ettiği için bildiriyorsunuz. Odada 3 farklı kişi bildirirse kullanıcı o gün boyunca otomatik olarak susturulur.',
           style: TextStyle(fontSize: 13.5, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Iptal'),
+            child: const Text('İptal'),
           ),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
@@ -706,6 +756,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kCrimsonRed),
             onPressed: () async {
+              final nav = Navigator.of(ctx);
               _emit('report_user', {'targetClientId': targetClientId});
               setState(() {
                 _blockedClientIds.add(targetClientId);
@@ -715,7 +766,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 'mitemasuka_blocked',
                 _blockedClientIds.toList(),
               );
-              if (ctx.mounted) Navigator.of(ctx).pop();
+              nav.pop();
             },
             child: const Text('Bildir ve Engelle'),
           ),
@@ -730,7 +781,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
-          'Yakinindakini Ekle (QR Kod)',
+          'Yakınındakini Ekle (QR Kod)',
           textAlign: TextAlign.center,
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
@@ -750,7 +801,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Cevrendeki kisiler kamerasiyla okutup indirmeden aninda ayni 100m odasina katilabilir.',
+              'Çevrendeki kişiler kamerasıyla okutup indirmeden anında aynı 100m odasına katılabilir.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12.5),
             ),
@@ -777,10 +828,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         ),
         content: const SingleChildScrollView(
           child: Text(
-            'Ayni Mekandayiz, Ama Birbirimizi Goruyor Muyuz?\n\n'
-            'Japoncada "Mitemasu ka?" (見てますか?), "Beni goruyor musun? / Etrafina bakiyor musun?" anlamina gelir.\n\n'
-            '• 100 Metre Gerceklik Cemberi: Sadece fiziksel olarak seninle ayni 100 metrede bulunan kisileri tek bir canli sohbet odasinda bulusturur.\n'
-            '• Web ve Mobil Ayni Odada: Uygulamadan veya mitemasuka.com uzerinden giren herkes ayni odada aninda yazisir.',
+            'Aynı Mekandayız, Ama Birbirimizi Görüyor Muyuz?\n\n'
+            'Japoncada "Mitemasu ka?" (見てますか?), "Beni görüyor musun? / Etrafına bakıyor musun?" anlamına gelir.\n\n'
+            '• 100 Metre Gerçeklik Çemberi: Sadece fiziksel olarak seninle aynı 100 metrede bulunan kişileri tek bir canlı sohbet odasında buluşturur.\n'
+            '• Web ve Mobil Aynı Odada: Uygulamadan veya mitemasuka.com üzerinden giren herkes aynı odada anında yazışır.',
             style: TextStyle(fontSize: 13.5, height: 1.45),
           ),
         ),
@@ -800,15 +851,15 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
-          'Mitemasuka Plus (Simdilik Ucretsiz)',
+          'Mitemasuka Plus (Şimdilik Ücretsiz)',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
         content: const Text(
-          'Lansman doneminde tum Plus ozellikleri ucretsizdir:\n\n'
-          '• 500 m ve 1 km genis menzil secimi\n'
-          '• Sinirsiz gunluk mesaj hakki\n'
-          '• Ozel takma ad (Nickname) belirleme\n'
-          '• Hayalet Modu (Sessiz giris/cikis)',
+          'Lansman döneminde tüm Plus özellikleri ücretsizdir:\n\n'
+          '• 500 m ve 1 km geniş menzil seçimi\n'
+          '• Sınırsız günlük mesaj hakkı\n'
+          '• Özel takma ad (Nickname) belirleme\n'
+          '• Hayalet Modu (Sessiz giriş/çıkış)',
           style: TextStyle(fontSize: 13.5, height: 1.45),
         ),
         actions: [
@@ -823,7 +874,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 _emit('activate_plus');
                 Navigator.of(ctx).pop();
               },
-              child: const Text('Ucretsiz Plus Aktif Et'),
+              child: const Text('Ücretsiz Plus Aktif Et'),
             ),
         ],
       ),
@@ -837,21 +888,21 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
-          'Takma Adimi Degistir',
+          'Takma Adımı Değiştir',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
         content: TextField(
           controller: ctrl,
           maxLength: 20,
           decoration: const InputDecoration(
-            hintText: 'Yeni takma adiniz...',
+            hintText: 'Yeni takma adınız...',
             border: OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Iptal'),
+            child: const Text('İptal'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kBrandBlue),
@@ -901,7 +952,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Sol: Karga Logo (84x84, hafif sola yaslı)
+                      // Sol: Karga Logo (Yuvarlak beyaz zeminli)
                       GestureDetector(
                         onTap: () {
                           setState(() {
@@ -915,24 +966,27 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           clipBehavior: Clip.none,
                           children: [
                             Container(
-                              width: 72,
-                              height: 54,
-                              alignment: Alignment.centerLeft,
+                              width: 58,
+                              height: 58,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: borderColor),
+                              ),
+                              padding: const EdgeInsets.all(4),
                               child: ClipOval(
                                 child: Image.asset(
                                   'assets/logo-karga.png',
-                                  width: 64,
-                                  height: 64,
                                   fit: BoxFit.contain,
                                 ),
                               ),
                             ),
                             Positioned(
-                              bottom: 4,
-                              right: 10,
+                              bottom: 2,
+                              right: 2,
                               child: Container(
-                                width: 10,
-                                height: 10,
+                                width: 11,
+                                height: 11,
                                 decoration: BoxDecoration(
                                   color: _isConnected
                                       ? const Color(0xFF10B981)
@@ -949,7 +1003,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                       // Sağ Kontrol Butonları: Aktif/Yüklü, Menzil, Gece Modu, Menü
                       Row(
                         children: [
-                          // 2/8 Aktif/Çevredeki Kişiler Butonu
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
                             onTap: () {
@@ -996,7 +1049,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           ),
                           const SizedBox(width: 6),
 
-                          // Menzil Seçici (100m / 500m / 1km)
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
                             onTap: () {
@@ -1038,7 +1090,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           ),
                           const SizedBox(width: 6),
 
-                          // Gece / Gündüz Butonu
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
                             onTap: widget.onToggleTheme,
@@ -1059,7 +1110,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           ),
                           const SizedBox(width: 6),
 
-                          // Hamburger Menü Butonu
                           InkWell(
                             borderRadius: BorderRadius.circular(12),
                             onTap: () {
@@ -1090,43 +1140,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   ),
                 ),
 
-                // Simülasyon Çubuğu (Açık ise)
-                if (_showSimBar)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    color: isDark ? const Color(0xFF262626) : const Color(0xFFEFF6FF),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.science_outlined, size: 16, color: kBrandBlue),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Simulasyon: +${_simOffsetMeters.round()}m',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: _simOffsetMeters,
-                            min: 0,
-                            max: 250,
-                            divisions: 25,
-                            activeColor: kBrandBlue,
-                            onChanged: (v) {
-                              setState(() => _simOffsetMeters = v);
-                            },
-                            onChangeEnd: (_) => _joinRoomIfReady(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
                 // 2. SABİT ÜST KULAKÇIK SATIRI: Sol (100m · aktif · çevrede) & Sağ (Özel)
                 Padding(
                   padding: const EdgeInsets.only(top: 6, bottom: 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Sola yapışık oda bilgi kulakçığı
                       GestureDetector(
                         onTap: () => setState(() => _activeView = 'room'),
                         child: Container(
@@ -1142,7 +1161,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             border: Border.all(color: borderColor),
                           ),
                           child: Text(
-                            '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} · ${_roomUsers.length} aktif · Cevrede $_nearbyInstalledCount kiside yuklu',
+                            '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} · ${_roomUsers.length} aktif · Çevrede $_nearbyInstalledCount kişide yüklü',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -1152,7 +1171,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ),
                       ),
 
-                      // Sağa yapışık Özel (DM) kulakçığı
                       GestureDetector(
                         onTap: () {
                           setState(() {
@@ -1178,7 +1196,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Ozel',
+                                'Özel',
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.bold,
@@ -1213,271 +1231,288 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
 
                 // 3. ANA SOHBET AKIŞI
                 Expanded(
-                  child: _activeView == 'dm' && _dmPeerClientId == null
+                  child: _baseLat == null || _baseLng == null
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'Ozel mesajlasmak icin odadaki bir kullanicinin ismine dokunun.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: textSecondary, fontSize: 14),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(color: kBrandBlue),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '100m çevrenizdeki odaya bağlanmak için GPS konumu alınıyor...',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: textSecondary, fontSize: 13.5),
+                                ),
+                              ],
                             ),
                           ),
                         )
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          itemCount: visibleMessages.length,
-                          itemBuilder: (ctx, idx) {
-                            final item = visibleMessages[idx];
-                            if (item.kind == 'system') {
-                              final isJoin = item.systemType == 'join';
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isJoin
-                                          ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                                          : kCrimsonRed.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      item.text,
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w500,
-                                        color: isJoin
-                                            ? const Color(0xFF10B981)
-                                            : kCrimsonRed,
-                                      ),
-                                    ),
-                                  ),
+                      : _activeView == 'dm' && _dmPeerClientId == null
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  'Özel mesajlaşmak için odadaki bir kullanıcının ismine dokunun.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: textSecondary, fontSize: 14),
                                 ),
-                              );
-                            }
-
-                            final isMine = item.senderId == _myId ||
-                                (item.senderClientId != null &&
-                                    item.senderClientId == _myClientId);
-                            final dist = !isMine
-                                ? _distanceFromMe(item.senderLat, item.senderLng)
-                                : null;
-                            final hasLetters =
-                                RegExp(r'\p{L}', unicode: true).hasMatch(item.text);
-                            final trKey = '${item.id}_$_uiLang';
-                            final translated = _translations[trKey];
-
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 5),
-                              child: Column(
-                                crossAxisAlignment: isMine
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
-                                children: [
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxWidth: MediaQuery.of(context).size.width * 0.84,
-                                    ),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 10,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isMine
-                                            ? kBrandBlue
-                                            : (isDark
-                                                ? const Color(0xFF262626)
-                                                : Colors.white),
-                                        borderRadius: BorderRadius.only(
-                                          topLeft: Radius.circular(isMine ? 18 : 4),
-                                          topRight: Radius.circular(isMine ? 4 : 18),
-                                          bottomLeft: const Radius.circular(18),
-                                          bottomRight: const Radius.circular(18),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              itemCount: visibleMessages.length,
+                              itemBuilder: (ctx, idx) {
+                                final item = visibleMessages[idx];
+                                if (item.kind == 'system') {
+                                  final isJoin = item.systemType == 'join';
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 4,
                                         ),
-                                        border: isMine
-                                            ? null
-                                            : Border.all(color: borderColor),
+                                        decoration: BoxDecoration(
+                                          color: isJoin
+                                              ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                              : kCrimsonRed.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          item.text,
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: isJoin
+                                                ? const Color(0xFF10B981)
+                                                : kCrimsonRed,
+                                          ),
+                                        ),
                                       ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          if (!isMine)
-                                            Padding(
-                                              padding: const EdgeInsets.only(bottom: 4),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  GestureDetector(
-                                                    onTap: () {
-                                                      if (item.senderClientId != null) {
-                                                        setState(() {
-                                                          _dmDraftPeer = RoomUser(
-                                                            id: item.senderId ?? '',
-                                                            clientId: item.senderClientId!,
-                                                            username: item.senderName ?? 'User',
-                                                            color: item.senderColor ?? '#1A81E5',
-                                                          );
-                                                          _activeView = 'dm';
-                                                        });
-                                                      }
-                                                    },
-                                                    child: Text(
-                                                      item.senderName ?? 'Kullanici',
-                                                      style: TextStyle(
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 13.5,
-                                                        color: _parseHexColor(item.senderColor),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  if (dist != null)
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 1.5,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        color: pillBg,
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: Text(
-                                                        '${dist}m',
-                                                        style: TextStyle(
-                                                          fontSize: 10.5,
-                                                          color: textSecondary,
+                                    ),
+                                  );
+                                }
+
+                                final isMine = item.senderId == _myId ||
+                                    (item.senderClientId != null &&
+                                        item.senderClientId == _myClientId);
+                                final dist = !isMine
+                                    ? _distanceFromMe(item.senderLat, item.senderLng)
+                                    : null;
+                                final hasLetters =
+                                    RegExp(r'\p{L}', unicode: true).hasMatch(item.text);
+                                final trKey = '${item.id}_$_uiLang';
+                                final translated = _translations[trKey];
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 5),
+                                  child: Column(
+                                    crossAxisAlignment: isMine
+                                        ? CrossAxisAlignment.end
+                                        : CrossAxisAlignment.start,
+                                    children: [
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: MediaQuery.of(context).size.width * 0.84,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isMine
+                                                ? kBrandBlue
+                                                : (isDark
+                                                    ? const Color(0xFF262626)
+                                                    : Colors.white),
+                                            borderRadius: BorderRadius.only(
+                                              topLeft: Radius.circular(isMine ? 18 : 4),
+                                              topRight: Radius.circular(isMine ? 4 : 18),
+                                              bottomLeft: const Radius.circular(18),
+                                              bottomRight: const Radius.circular(18),
+                                            ),
+                                            border: isMine
+                                                ? null
+                                                : Border.all(color: borderColor),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              if (!isMine)
+                                                Padding(
+                                                  padding: const EdgeInsets.only(bottom: 4),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      GestureDetector(
+                                                        onTap: () {
+                                                          if (item.senderClientId != null) {
+                                                            setState(() {
+                                                              _dmDraftPeer = RoomUser(
+                                                                id: item.senderId ?? '',
+                                                                clientId: item.senderClientId!,
+                                                                username: item.senderName ?? 'User',
+                                                                color: item.senderColor ?? '#1A81E5',
+                                                              );
+                                                              _activeView = 'dm';
+                                                            });
+                                                          }
+                                                        },
+                                                        child: Text(
+                                                          item.senderName ?? 'Kullanıcı',
+                                                          style: TextStyle(
+                                                            fontWeight: FontWeight.bold,
+                                                            fontSize: 13.5,
+                                                            color: _parseHexColor(item.senderColor),
+                                                          ),
                                                         ),
                                                       ),
-                                                    ),
-                                                  if (item.senderClientId != null) ...[
-                                                    const SizedBox(width: 6),
-                                                    GestureDetector(
-                                                      onTap: () => _showReportConfirmModal(
-                                                        item.senderClientId!,
-                                                        item.senderName ?? 'Kullanici',
-                                                      ),
-                                                      child: const Icon(
-                                                        Icons.shield_outlined,
-                                                        size: 14,
-                                                        color: kCrimsonRed,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ),
-                                          if (item.replyTo != null)
-                                            Container(
-                                              margin: const EdgeInsets.only(bottom: 6),
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: isMine
-                                                    ? Colors.black.withValues(alpha: 0.15)
-                                                    : pillBg,
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: Text(
-                                                '${item.replyTo!['senderName'] ?? ''}: ${item.replyTo!['text'] ?? ''}',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 11.5,
-                                                  color: isMine ? Colors.white : textSecondary,
+                                                      const SizedBox(width: 8),
+                                                      if (dist != null)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 1.5,
+                                                          ),
+                                                          decoration: BoxDecoration(
+                                                            color: pillBg,
+                                                            borderRadius: BorderRadius.circular(6),
+                                                          ),
+                                                          child: Text(
+                                                            '${dist}m',
+                                                            style: TextStyle(
+                                                              fontSize: 10.5,
+                                                              color: textSecondary,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      if (item.senderClientId != null) ...[
+                                                        const SizedBox(width: 6),
+                                                        GestureDetector(
+                                                          onTap: () => _showReportConfirmModal(
+                                                            item.senderClientId!,
+                                                            item.senderName ?? 'Kullanıcı',
+                                                          ),
+                                                          child: const Icon(
+                                                            Icons.shield_outlined,
+                                                            size: 14,
+                                                            color: kCrimsonRed,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                          Text(
-                                            item.text,
-                                            style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w500,
-                                              color: isMine ? Colors.white : textPrimary,
-                                              height: 1.32,
-                                            ),
-                                          ),
-                                          if (translated != null)
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 6),
-                                              child: Text(
-                                                translated,
-                                                style: TextStyle(
-                                                  fontSize: 15,
-                                                  fontStyle: FontStyle.italic,
-                                                  color: isMine
-                                                      ? Colors.white.withValues(alpha: 0.9)
-                                                      : kBrandBlue,
+                                              if (item.replyTo != null)
+                                                Container(
+                                                  margin: const EdgeInsets.only(bottom: 6),
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: isMine
+                                                        ? Colors.black.withValues(alpha: 0.15)
+                                                        : pillBg,
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: Text(
+                                                    '${item.replyTo!['senderName'] ?? ''}: ${item.replyTo!['text'] ?? ''}',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      color: isMine ? Colors.white : textSecondary,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                            ),
-                                          const SizedBox(height: 2),
-                                          Align(
-                                            alignment: Alignment.bottomRight,
-                                            child: Text(
-                                              _formatTime(item.timestamp),
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: isMine
-                                                    ? Colors.white.withValues(alpha: 0.75)
-                                                    : textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  // Başkasının mesajı altında Yanıtla & Çevir
-                                  if (!isMine && _activeView == 'room')
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 3, left: 6),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          GestureDetector(
-                                            onTap: () {
-                                              setState(() => _replyingTo = item);
-                                              _inputFocusNode.requestFocus();
-                                            },
-                                            child: Text(
-                                              'Yanitla',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w500,
-                                                color: textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                          if (hasLetters) ...[
-                                            const SizedBox(width: 12),
-                                            GestureDetector(
-                                              onTap: () => _translateMessage(item),
-                                              child: Text(
-                                                'Cevir',
+                                              Text(
+                                                item.text,
                                                 style: TextStyle(
-                                                  fontSize: 11,
+                                                  fontSize: 18,
                                                   fontWeight: FontWeight.w500,
-                                                  color: textSecondary,
+                                                  color: isMine ? Colors.white : textPrimary,
+                                                  height: 1.32,
                                                 ),
                                               ),
-                                            ),
-                                          ],
-                                        ],
+                                              if (translated != null)
+                                                Padding(
+                                                  padding: const EdgeInsets.only(top: 6),
+                                                  child: Text(
+                                                    translated,
+                                                    style: TextStyle(
+                                                      fontSize: 15,
+                                                      fontStyle: FontStyle.italic,
+                                                      color: isMine
+                                                          ? Colors.white.withValues(alpha: 0.9)
+                                                          : kBrandBlue,
+                                                    ),
+                                                  ),
+                                                ),
+                                              const SizedBox(height: 2),
+                                              Align(
+                                                alignment: Alignment.bottomRight,
+                                                child: Text(
+                                                  _formatTime(item.timestamp),
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: isMine
+                                                        ? Colors.white.withValues(alpha: 0.75)
+                                                        : textSecondary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                      if (!isMine && _activeView == 'room')
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 3, left: 6),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              GestureDetector(
+                                                onTap: () {
+                                                  setState(() => _replyingTo = item);
+                                                  _inputFocusNode.requestFocus();
+                                                },
+                                                child: Text(
+                                                  'Yanıtla',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: textSecondary,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (hasLetters) ...[
+                                                const SizedBox(width: 12),
+                                                GestureDetector(
+                                                  onTap: () => _translateMessage(item),
+                                                  child: Text(
+                                                    'Çevir',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: textSecondary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
                 ),
 
                 // Yanıtlama önizleme çubuğu
@@ -1524,10 +1559,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               onSubmitted: (_) => _handleSendMessage(),
                               decoration: InputDecoration(
                                 hintText: _isBanned
-                                    ? 'Bugun susturuldunuz'
+                                    ? 'Bugün susturuldunuz'
                                     : _activeView == 'dm'
-                                        ? '${_dmPeerName ?? 'Ozel'} — fisilti yazin...'
-                                        : '${_selectedRadius}m — odasina mesaj yazin...',
+                                        ? '${_dmPeerName ?? 'Özel'} — fısıltı yazın...'
+                                        : '${_selectedRadius}m — odasına mesaj yazın...',
                                 filled: true,
                                 fillColor: pillBg,
                                 contentPadding: const EdgeInsets.symmetric(
@@ -1580,7 +1615,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               child: Text(
                                 _isPlus
-                                    ? 'Plus • Sinirsiz'
+                                    ? 'Plus • Sınırsız'
                                     : '$_remainingQuota/$_dailyLimit mesaj • Plus',
                                 style: TextStyle(
                                   fontSize: 11,
@@ -1593,7 +1628,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           GestureDetector(
                             onTap: _showStoryDialog,
                             child: Text(
-                              'Beni Goruyor Musun?',
+                              'Beni Görüyor Musun?',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w500,
@@ -1690,7 +1725,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Odadaki Kisiler (${_roomUsers.length})',
+                          'Odadaki Kişiler (${_roomUsers.length})',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                         ),
                         const Divider(),
@@ -1724,7 +1759,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                             _activeView = 'dm';
                                           });
                                         },
-                                        child: const Text('Ozel Yaz'),
+                                        child: const Text('Özel Yaz'),
                                       ),
                               );
                             },
@@ -1759,7 +1794,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Column(
                             children: [
-                              // 1. Kutu: Mitemasuka Plus (#1A81E5)
                               InkWell(
                                 borderRadius: BorderRadius.circular(14),
                                 onTap: () {
@@ -1790,7 +1824,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                           ),
                                           const SizedBox(width: 8),
                                           Text(
-                                            _isPlus ? 'Mitemasuka Plus Aktif' : "Plus'a Gec",
+                                            _isPlus ? 'Mitemasuka Plus Aktif' : "Plus'a Geç",
                                             style: TextStyle(
                                               fontWeight: FontWeight.w600,
                                               fontSize: 13,
@@ -1823,14 +1857,13 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               const SizedBox(height: 8),
 
-                              // 2. Kutu: Kanal Kur (#DC143C Crimson Red)
                               InkWell(
                                 borderRadius: BorderRadius.circular(14),
                                 onTap: () {
                                   setState(() => _showHamburgerMenu = false);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Canli Anons Kanali kurulumu aciliyor...'),
+                                      content: Text('Canlı Anons Kanalı kurulumu açılıyor...'),
                                     ),
                                   );
                                 },
@@ -1860,7 +1893,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
-                                                'Kanal Kur (Tek Yonlu Seslen)',
+                                                'Kanal Kur (Tek Yönlü Seslen)',
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                   fontSize: 12.5,
@@ -1896,7 +1929,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            'Simdilik Ucretsiz',
+                                            'Şimdilik Ücretsiz',
                                             style: TextStyle(
                                               fontSize: 9.5,
                                               fontWeight: FontWeight.w600,
@@ -1916,13 +1949,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ),
                         const Divider(height: 16),
 
-                        // Menü Satırları
                         ListTile(
                           dense: true,
                           leading: const Icon(Icons.translate, size: 18, color: Color(0xFF6E9482)),
-                          title: const Text('Otomatik Ceviri (Ucretsiz)', style: TextStyle(fontSize: 13)),
+                          title: const Text('Otomatik Çeviri (Ücretsiz)', style: TextStyle(fontSize: 13)),
                           trailing: Text(
-                            _autoTranslate ? 'Acik' : 'Kapali',
+                            _autoTranslate ? 'Açık' : 'Kapalı',
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.bold,
@@ -1947,7 +1979,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ListTile(
                           dense: true,
                           leading: const Icon(Icons.qr_code, size: 18, color: Color(0xFF6E9482)),
-                          title: const Text('Yakinindakini Ekle (QR Kod)', style: TextStyle(fontSize: 13)),
+                          title: const Text('Yakınındakini Ekle (QR Kod)', style: TextStyle(fontSize: 13)),
                           onTap: () {
                             setState(() => _showHamburgerMenu = false);
                             _showQrDialog();
@@ -1960,7 +1992,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             size: 18,
                             color: isDark ? kBrandBlueDarkText : kBrandBlue,
                           ),
-                          title: const Text('Takma Adimi Degistir', style: TextStyle(fontSize: 13)),
+                          title: const Text('Takma Adımı Değiştir', style: TextStyle(fontSize: 13)),
                           onTap: () {
                             setState(() => _showHamburgerMenu = false);
                             if (!_isPlus) {
@@ -1978,11 +2010,11 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             color: Color(0xFF8C7DA8),
                           ),
                           title: const Text(
-                            'Hayalet Modu (Sessiz Giris)',
+                            'Hayalet Modu (Sessiz Giriş)',
                             style: TextStyle(fontSize: 13),
                           ),
                           trailing: Text(
-                            _ghostMode ? 'Acik' : 'Kapali',
+                            _ghostMode ? 'Açık' : 'Kapalı',
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.bold,
@@ -1998,23 +2030,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             _emit('set_ghost_mode', {'enabled': !_ghostMode});
                           },
                         ),
-                        ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.science_outlined, size: 18, color: kBrandBlue),
-                          title: const Text('Mesafe Simulasyonu (Test)', style: TextStyle(fontSize: 13)),
-                          trailing: Text(
-                            _showSimBar ? 'Gizle' : 'Goster',
-                            style: TextStyle(fontSize: 11, color: textSecondary),
-                          ),
-                          onTap: () {
-                            setState(() {
-                              _showSimBar = !_showSimBar;
-                              _showHamburgerMenu = false;
-                            });
-                          },
-                        ),
                         const Divider(height: 12),
-                        // İletişim: info@mitemasuka.com
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                           child: Row(
@@ -2043,7 +2059,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   );
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('info@mitemasuka.com kopyalandi'),
+                                      content: Text('info@mitemasuka.com kopyalandı'),
                                     ),
                                   );
                                 },
