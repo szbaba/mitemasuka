@@ -563,6 +563,17 @@ export class MitemasukaHub {
         user.roomId = null;
 
         this.cleanupClientDmInRoom(oldRoomId, user.clientId, user.username);
+        this.broadcastToRoom(
+          oldRoomId,
+          'user_typing',
+          {
+            userId: user.id,
+            clientId: user.clientId,
+            username: user.username,
+            isTyping: false,
+          },
+          user.id
+        );
 
         if (!user.ghostMode) {
           this.broadcastToRoom(oldRoomId, 'system_message', {
@@ -1158,6 +1169,17 @@ export class MitemasukaHub {
         roomObj.messages.shift();
       }
 
+      this.broadcastToRoom(
+        user.roomId,
+        'user_typing',
+        {
+          userId: user.id,
+          clientId: user.clientId,
+          username: user.username,
+          isTyping: false,
+        },
+        user.id
+      );
       this.broadcastToRoom(user.roomId, 'chat_message', messageData);
       return;
     }
@@ -1255,6 +1277,7 @@ export class MitemasukaHub {
         'user_typing',
         {
           userId: user.id,
+          clientId: user.clientId,
           username: user.username,
           isTyping: Boolean(data),
         },
@@ -1345,6 +1368,17 @@ export class MitemasukaHub {
         this.users.delete(socketId);
         if (oldRoomId) {
           this.cleanupClientDmInRoom(oldRoomId, u.clientId, u.username);
+          this.broadcastToRoom(
+            oldRoomId,
+            'user_typing',
+            {
+              userId: u.id,
+              clientId: u.clientId,
+              username: u.username,
+              isTyping: false,
+            },
+            u.id
+          );
           if (!u.ghostMode) {
             this.broadcastToRoom(oldRoomId, 'system_message', {
               id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

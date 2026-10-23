@@ -238,6 +238,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   final Set<String> _translatingIds = {};
   Set<String> _blockedClientIds = {};
   final Set<String> _expandedSystemGroups = {};
+  final Map<String, String> _typingUsers = {};
+  final Map<String, Timer> _remoteTypingTimers = {};
+  Timer? _myTypingDebounce;
 
   @override
   void initState() {
@@ -249,6 +252,11 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   void dispose() {
     _reconnectTimer?.cancel();
     _pingTimer?.cancel();
+    _myTypingDebounce?.cancel();
+    for (final t in _remoteTypingTimers.values) {
+      t.cancel();
+    }
+    _remoteTypingTimers.clear();
     _posSub?.cancel();
     _wsSub?.cancel();
     _ws?.close();
@@ -385,17 +393,27 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         },
         onDone: () {
           debugPrint('[Mitemasuka] WebSocket Closed (code=${ws.closeCode})');
+          for (final t in _remoteTypingTimers.values) {
+            t.cancel();
+          }
+          _remoteTypingTimers.clear();
           if (!mounted) return;
           setState(() {
             _isConnected = false;
+            _typingUsers.clear();
           });
           _scheduleReconnect();
         },
         onError: (err) {
           debugPrint('[Mitemasuka] WebSocket Stream Error: $err');
+          for (final t in _remoteTypingTimers.values) {
+            t.cancel();
+          }
+          _remoteTypingTimers.clear();
           if (!mounted) return;
           setState(() {
             _isConnected = false;
+            _typingUsers.clear();
           });
           _scheduleReconnect();
         },
@@ -427,7 +445,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     });
   }
 
-  void _emit(String event, [Map<String, dynamic>? data]) {
+  void _emit(String event, [dynamic data]) {
     if (_ws == null || _ws!.readyState != WebSocket.open) return;
     try {
       _ws!.add(jsonEncode({'event': event, 'data': data ?? {}}));
@@ -470,7 +488,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         _joinRoomIfReady();
       } else if (event == 'joined_room' && data is Map<String, dynamic>) {
         final history = (data['history'] is List) ? data['history'] as List : [];
+        for (final t in _remoteTypingTimers.values) {
+          t.cancel();
+        }
+        _remoteTypingTimers.clear();
         setState(() {
+          _typingUsers.clear();
           if (data['radius'] is num) {
             _selectedRadius = (data['radius'] as num).toInt();
           }
@@ -499,9 +522,19 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         final installed = (data['nearbyInstalledCount'] is num)
             ? (data['nearbyInstalledCount'] as num).toInt()
             : users.length;
+        final activeIds = users
+            .where((u) => u.clientId != _myClientId && u.id != _myId)
+            .map((u) => u.id)
+            .toSet();
         setState(() {
           _roomUsers = users;
           _nearbyInstalledCount = math.max(users.length, installed);
+          final staleIds =
+              _typingUsers.keys.where((uid) => !activeIds.contains(uid)).toList();
+          for (final uid in staleIds) {
+            _typingUsers.remove(uid);
+            _remoteTypingTimers.remove(uid)?.cancel();
+          }
         });
       } else if (event == 'system_message' && data is Map<String, dynamic>) {
         setState(() {
@@ -512,6 +545,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         final msg = ChatMessage.fromJson(data);
         final isDm = msg.whisperToClientId != null && msg.whisperToClientId!.isNotEmpty;
         setState(() {
+          if (msg.senderId != null) {
+            _typingUsers.remove(msg.senderId);
+            _remoteTypingTimers.remove(msg.senderId)?.cancel();
+          }
           if (isDm) {
             if (!_whispers.any((m) => m.id == msg.id)) {
               _whispers.add(msg);
@@ -531,6 +568,32 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           _translateMessage(msg);
         }
         _scrollToBottom();
+      } else if (event == 'user_typing' && data is Map<String, dynamic>) {
+        final uid = (data['userId'] ?? '').toString();
+        final cid = (data['clientId'] ?? '').toString();
+        if (uid.isEmpty || uid == _myId || (cid.isNotEmpty && cid == _myClientId)) {
+          return;
+        }
+        final isTyping = data['isTyping'] == true;
+        final uname = (data['username'] ?? 'User').toString();
+        _remoteTypingTimers.remove(uid)?.cancel();
+        if (isTyping) {
+          setState(() {
+            _typingUsers[uid] = uname;
+          });
+          _remoteTypingTimers[uid] = Timer(const Duration(seconds: 3), () {
+            _remoteTypingTimers.remove(uid);
+            if (mounted && _typingUsers.containsKey(uid)) {
+              setState(() {
+                _typingUsers.remove(uid);
+              });
+            }
+          });
+        } else if (_typingUsers.containsKey(uid)) {
+          setState(() {
+            _typingUsers.remove(uid);
+          });
+        }
       } else if (event == 'dm_state' && data is Map<String, dynamic>) {
         setState(() {
           _dmSession = data['session'] is Map<String, dynamic>
@@ -612,9 +675,36 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     return (R * c).round();
   }
 
+  void _handleInputChanged(String val) {
+    if (!_isConnected || _isBanned) return;
+    _emit('typing', true);
+    _myTypingDebounce?.cancel();
+    _myTypingDebounce = Timer(const Duration(milliseconds: 1500), () {
+      _emit('typing', false);
+    });
+  }
+
+  List<String> get _activeTypingNames {
+    final activeMap = <String, RoomUser>{};
+    for (final u in _roomUsers) {
+      if (u.id != _myId &&
+          u.clientId != _myClientId &&
+          !_blockedClientIds.contains(u.clientId)) {
+        activeMap[u.id] = u;
+      }
+    }
+    return _typingUsers.entries
+        .where((e) => activeMap.containsKey(e.key))
+        .map((e) => activeMap[e.key]?.username ?? e.value)
+        .toList();
+  }
+
   void _handleSendMessage() {
     final text = _inputController.text.trim();
     if (text.isEmpty || !_isConnected || _isBanned) return;
+
+    _myTypingDebounce?.cancel();
+    _emit('typing', false);
 
     if (_activeView == 'dm') {
       final peerClientId = _dmPeerClientId;
@@ -1692,6 +1782,40 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             ),
                 ),
 
+                if (_activeView == 'room' && _activeTypingNames.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 2, 18, 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: const BoxDecoration(
+                              color: kBrandBlue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              '${_activeTypingNames.join(', ')} yazıyor...',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.w500,
+                                color: isDark ? kBrandBlueDarkText : kBrandBlue,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                 // Yanıtlama önizleme çubuğu
                 if (_replyingTo != null && _activeView == 'room')
                   Container(
@@ -1733,6 +1857,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               controller: _inputController,
                               focusNode: _inputFocusNode,
                               textInputAction: TextInputAction.send,
+                              onChanged: _handleInputChanged,
                               onSubmitted: (_) => _handleSendMessage(),
                               decoration: InputDecoration(
                                 hintText: _isBanned

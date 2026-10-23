@@ -452,6 +452,7 @@ export default function MitemasukaPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const channelEndRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const remoteTypingTimersRef = useRef<Record<string, NodeJS.Timeout>>({});
   const roomNotifRef = useRef<boolean>(true);
   const whisperNotifRef = useRef<boolean>(true);
   const presenceNotifRef = useRef<boolean>(false);
@@ -671,6 +672,9 @@ export default function MitemasukaPage() {
       ws.onclose = () => {
         if (isUnmounted) return;
         setIsConnected(false);
+        Object.values(remoteTypingTimersRef.current).forEach(clearTimeout);
+        remoteTypingTimersRef.current = {};
+        setTypingUsers({});
         if (reconnectTimer) clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connectWebSocket, 1500);
       };
@@ -699,6 +703,9 @@ export default function MitemasukaPage() {
           } else if (event === 'joined_room') {
             setRoomId(data.roomId);
             setSelectedRadius(data.radius);
+            Object.values(remoteTypingTimersRef.current).forEach(clearTimeout);
+            remoteTypingTimersRef.current = {};
+            setTypingUsers({});
             const sess: DmSession | null = data.dmSession || null;
             setDmSession(sess);
             setDmDraftPeer(null);
@@ -721,11 +728,32 @@ export default function MitemasukaPage() {
               );
             }
           } else if (event === 'room_users') {
-            const list = data.users || [];
+            const list: RoomUser[] = data.users || [];
             setRoomUsers(list);
             setNearbyInstalledCount(
               Math.max(list.length, Number(data.nearbyInstalledCount) || 1)
             );
+            const activeIds = new Set(
+              list
+                .filter((u) => u.clientId !== storedClientId && u.id !== myIdRef.current)
+                .map((u) => u.id)
+            );
+            setTypingUsers((prev) => {
+              let changed = false;
+              const next: Record<string, string> = {};
+              for (const [uid, uname] of Object.entries(prev)) {
+                if (activeIds.has(uid)) {
+                  next[uid] = uname;
+                } else {
+                  changed = true;
+                  if (remoteTypingTimersRef.current[uid]) {
+                    clearTimeout(remoteTypingTimersRef.current[uid]);
+                    delete remoteTypingTimersRef.current[uid];
+                  }
+                }
+              }
+              return changed ? next : prev;
+            });
           } else if (event === 'nearby_channels') {
             if (Array.isArray(data)) {
               setNearbyChannels(data);
@@ -826,6 +854,18 @@ export default function MitemasukaPage() {
               peerName: String(data?.targetName || ''),
             });
           } else if (event === 'chat_message') {
+            if (data.senderId) {
+              if (remoteTypingTimersRef.current[data.senderId]) {
+                clearTimeout(remoteTypingTimersRef.current[data.senderId]);
+                delete remoteTypingTimersRef.current[data.senderId];
+              }
+              setTypingUsers((prev) => {
+                if (!prev[data.senderId]) return prev;
+                const updated = { ...prev };
+                delete updated[data.senderId];
+                return updated;
+              });
+            }
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.id)) return prev;
               return [
@@ -869,12 +909,36 @@ export default function MitemasukaPage() {
             setMessages((prev) => prev.map(applyReaction));
             setWhispers((prev) => prev.map(applyReaction));
           } else if (event === 'user_typing') {
-            setTypingUsers((prev) => {
-              const updated = { ...prev };
-              if (data.isTyping) updated[data.userId] = data.username;
-              else delete updated[data.userId];
-              return updated;
-            });
+            const uid = String(data?.userId || '');
+            if (!uid || uid === myIdRef.current || data?.clientId === storedClientId) {
+              return;
+            }
+            if (remoteTypingTimersRef.current[uid]) {
+              clearTimeout(remoteTypingTimersRef.current[uid]);
+              delete remoteTypingTimersRef.current[uid];
+            }
+            if (data.isTyping) {
+              setTypingUsers((prev) => ({
+                ...prev,
+                [uid]: String(data.username || 'User'),
+              }));
+              remoteTypingTimersRef.current[uid] = setTimeout(() => {
+                delete remoteTypingTimersRef.current[uid];
+                setTypingUsers((prev) => {
+                  if (!prev[uid]) return prev;
+                  const updated = { ...prev };
+                  delete updated[uid];
+                  return updated;
+                });
+              }, 3000);
+            } else {
+              setTypingUsers((prev) => {
+                if (!prev[uid]) return prev;
+                const updated = { ...prev };
+                delete updated[uid];
+                return updated;
+              });
+            }
           }
         } catch {}
       };
@@ -895,6 +959,8 @@ export default function MitemasukaPage() {
       isUnmounted = true;
       window.removeEventListener('visibilitychange', handleVisibilityOrOnline);
       window.removeEventListener('online', handleVisibilityOrOnline);
+      Object.values(remoteTypingTimersRef.current).forEach(clearTimeout);
+      remoteTypingTimersRef.current = {};
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) ws.close();
     };
@@ -1446,7 +1512,21 @@ export default function MitemasukaPage() {
     typeof window !== 'undefined' && window.location.hostname !== 'localhost'
       ? window.location.origin
       : 'https://mitemasuka.com';
-  const activeTypingNames = Object.values(typingUsers);
+  const activeTypingNames = React.useMemo(() => {
+    const activeRoomMap = new Map<string, RoomUser>();
+    roomUsers.forEach((u) => {
+      if (
+        u.id !== myId &&
+        u.clientId !== myClientId &&
+        !blockedClientIds[u.clientId]
+      ) {
+        activeRoomMap.set(u.id, u);
+      }
+    });
+    return Object.entries(typingUsers)
+      .filter(([uid]) => activeRoomMap.has(uid))
+      .map(([uid, name]) => activeRoomMap.get(uid)?.username || name);
+  }, [typingUsers, roomUsers, myId, myClientId, blockedClientIds]);
   const t = UI_TEXT[uiLang];
 
   return (
