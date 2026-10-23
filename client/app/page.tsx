@@ -32,6 +32,8 @@ import {
   Mic,
   MicOff,
   Radio,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 interface WsClient {
@@ -310,7 +312,8 @@ export default function MitemasukaPage() {
   const [showRulesModal, setShowRulesModal] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları
+  // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları + Tema (Corsecure Light/Dark)
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [simOffsetMeters, setSimOffsetMeters] = useState<number>(0);
   const [showSimBar, setShowSimBar] = useState<boolean>(false);
   const [roomNotifEnabled, setRoomNotifEnabled] = useState<boolean>(true);
@@ -351,6 +354,15 @@ export default function MitemasukaPage() {
       localStorage.setItem('mitemasuka_notif_room', String(roomNotifEnabled));
     } catch {}
   }, [roomNotifEnabled]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', isDarkMode);
+    }
+    try {
+      localStorage.setItem('mitemasuka_theme', isDarkMode ? 'dark' : 'light');
+    } catch {}
+  }, [isDarkMode]);
 
   useEffect(() => {
     whisperNotifRef.current = whisperNotifEnabled;
@@ -419,6 +431,10 @@ export default function MitemasukaPage() {
       const savedPresence = localStorage.getItem('mitemasuka_notif_presence');
       if (savedPresence !== null)
         setPresenceNotifEnabled(savedPresence === 'true');
+      const savedTheme = localStorage.getItem('mitemasuka_theme');
+      if (savedTheme === 'dark') {
+        setIsDarkMode(true);
+      }
     } catch {}
   }, []);
 
@@ -911,50 +927,53 @@ export default function MitemasukaPage() {
   const activeTypingNames = Object.values(typingUsers);
 
   return (
-    <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-[#0b141a] text-[#e9edef] border-x border-[#222d34] shadow-2xl overflow-hidden">
-      {/* ÜST BAR */}
-      <header className="bg-[#202c33] border-b border-[#2a3942] z-20 shrink-0">
+    <div className="relative flex flex-col h-[100dvh] max-w-2xl mx-auto bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-x border-slate-200/80 dark:border-slate-800 shadow-2xl overflow-hidden transition-colors duration-200">
+      {/* ÜST BAR (Corsecure Clean Trust Navbar Stili) */}
+      <header className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 z-20 shrink-0 transition-colors">
         <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
           <div
             className="flex items-center gap-2.5 cursor-pointer select-none min-w-0 flex-1"
             onClick={() => setShowMembersDrawer((prev) => !prev)}
           >
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-[#00a884]/20 text-[#00a884] shrink-0">
-              <Radar className="w-6 h-6 animate-pulse" />
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/20 shrink-0">
+              <Radar className="w-5 h-5 animate-pulse" />
               <span
-                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#202c33] ${
-                  isConnected ? 'bg-[#00a884]' : 'bg-red-500'
+                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
+                  isConnected ? 'bg-emerald-500' : 'bg-red-500'
                 }`}
               />
             </div>
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <h1 className="font-bold text-base leading-tight truncate tracking-tight">
-                  Mitemasuka
+                <h1 className="font-bold text-base leading-tight truncate tracking-tight uppercase">
+                  <span className="text-slate-400 dark:text-slate-500">
+                    Mitema
+                  </span>
+                  <span className="text-blue-700 dark:text-blue-400">suka</span>
                 </h1>
-                <span className="text-[11px] text-[#00a884] font-medium px-1.5 py-0.5 rounded bg-[#00a884]/10 border border-[#00a884]/30 shrink-0">
+                <span className="text-[11px] text-blue-700 dark:text-blue-300 font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/80 shrink-0">
                   見てますか?
                 </span>
                 {showMembersDrawer ? (
-                  <ChevronUp className="w-4 h-4 text-[#8696a0] shrink-0" />
+                  <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
                 ) : (
-                  <ChevronDown className="w-4 h-4 text-[#8696a0] shrink-0" />
+                  <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
               </div>
-              <p className="text-xs text-[#8696a0] flex items-center gap-1.5 truncate mt-0.5">
-                <Users className="w-3.5 h-3.5 text-[#00a884] shrink-0" />
-                <span className="text-[#e9edef] font-medium">
+              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 truncate mt-0.5">
+                <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="text-slate-800 dark:text-slate-200 font-semibold">
                   {roomUsers.length} kişi
                 </span>
                 <span>•</span>
                 <span
                   style={{ color: myColor }}
-                  className="font-medium truncate flex items-center gap-1"
+                  className="font-semibold truncate flex items-center gap-1"
                 >
                   {myUsername}
                   {isPlus && (
-                    <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40 rounded">
+                    <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-100 dark:bg-amber-400/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-400/40 rounded-md">
                       ⚡ PLUS
                     </span>
                   )}
@@ -964,7 +983,7 @@ export default function MitemasukaPage() {
             </div>
           </div>
 
-          <div className="hidden sm:flex bg-[#111b21] p-0.5 rounded-lg border border-[#2a3942] shrink-0">
+          <div className="hidden sm:flex bg-slate-100 dark:bg-slate-800/90 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shrink-0">
             {RADIUS_OPTIONS.map((opt) => {
               const locked = opt.requiresPlus && !isPlus;
               const isSelected = selectedRadius === opt.value;
@@ -972,37 +991,52 @@ export default function MitemasukaPage() {
                 <button
                   key={opt.value}
                   onClick={() => handleSelectRadius(opt)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+                  className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-all flex items-center gap-1 ${
                     isSelected
-                      ? 'bg-[#00a884] text-[#111b21] font-bold shadow'
+                      ? 'bg-blue-600 text-white font-semibold shadow-sm shadow-blue-600/25'
                       : locked
-                      ? 'text-[#8696a0]/80 hover:text-amber-300'
-                      : 'text-[#8696a0] hover:text-white'
+                      ? 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-300'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <span>{opt.label}</span>
-                  {locked && <Lock className="w-2.5 h-2.5 text-amber-400" />}
+                  {locked && <Lock className="w-2.5 h-2.5 text-amber-500" />}
                 </button>
               );
             })}
           </div>
 
-          <button
-            onClick={() => setShowHamburgerMenu((prev) => !prev)}
-            className="p-2 rounded-xl bg-[#111b21] border border-[#2a3942] text-[#e9edef] hover:bg-[#2a3942] transition shrink-0"
-            aria-label="Menü"
-          >
-            {showHamburgerMenu ? (
-              <X className="w-5 h-5" />
-            ) : (
-              <Menu className="w-5 h-5" />
-            )}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => setIsDarkMode((prev) => !prev)}
+              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700 transition"
+              title={isDarkMode ? 'Aydınlık Temaya Geç' : 'Koyu Temaya Geç'}
+              aria-label="Tema Değiştir"
+            >
+              {isDarkMode ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-600" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setShowHamburgerMenu((prev) => !prev)}
+              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700 transition shrink-0"
+              aria-label="Menü"
+            >
+              {showHamburgerMenu ? (
+                <X className="w-5 h-5" />
+              ) : (
+                <Menu className="w-5 h-5" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* 2. Satır (Mobil Menzil Seçici) */}
         <div className="flex sm:hidden px-3 pb-2">
-          <div className="grid grid-cols-4 w-full bg-[#111b21] p-1 rounded-xl border border-[#2a3942] gap-1">
+          <div className="grid grid-cols-4 w-full bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700/80 gap-1">
             {RADIUS_OPTIONS.map((opt) => {
               const locked = opt.requiresPlus && !isPlus;
               const isSelected = selectedRadius === opt.value;
@@ -1012,14 +1046,14 @@ export default function MitemasukaPage() {
                   onClick={() => handleSelectRadius(opt)}
                   className={`py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 ${
                     isSelected
-                      ? 'bg-[#00a884] text-[#111b21] font-bold shadow'
+                      ? 'bg-blue-600 text-white font-semibold shadow-sm shadow-blue-600/25'
                       : locked
-                      ? 'text-[#8696a0] hover:text-amber-300'
-                      : 'text-[#8696a0] hover:text-white'
+                      ? 'text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-300'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <span>{opt.label}</span>
-                  {locked && <Lock className="w-3 h-3 text-amber-400" />}
+                  {locked && <Lock className="w-3 h-3 text-amber-500" />}
                 </button>
               );
             })}
@@ -1029,7 +1063,7 @@ export default function MitemasukaPage() {
 
       {/* 🔴 YAKINDAKİ TEK YÖNLÜ CANLI ANONS KANALLARI BANDI (Konser / Miting / Konferans) */}
       {nearbyChannels.length > 0 && (
-        <div className="bg-gradient-to-r from-rose-950/90 via-amber-950/80 to-rose-950/90 border-b border-rose-500/40 px-3.5 py-2 shrink-0 space-y-1.5">
+        <div className="bg-rose-50/95 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-800/60 px-3.5 py-2 shrink-0 space-y-1.5">
           {nearbyChannels.map((ch) => {
             const lastMsg =
               ch.messages[ch.messages.length - 1]?.text || 'Canlı yayın aktif';
@@ -1044,18 +1078,18 @@ export default function MitemasukaPage() {
                     <Radio className="w-3 h-3" /> CANLI KANAL
                   </span>
                   <div className="min-w-0">
-                    <div className="text-xs font-bold text-amber-200 truncate">
+                    <div className="text-xs font-bold text-rose-900 dark:text-amber-200 truncate">
                       📢 {ch.title}{' '}
-                      <span className="text-[11px] font-normal text-rose-200/80">
+                      <span className="text-[11px] font-normal text-rose-600 dark:text-rose-200/80">
                         ({ch.ownerName} • {ch.listenerCount || 1} dinleyici)
                       </span>
                     </div>
-                    <div className="text-[11px] text-white/90 truncate">
+                    <div className="text-[11px] text-slate-700 dark:text-white/90 truncate">
                       {lastMsg}
                     </div>
                   </div>
                 </div>
-                <span className="text-[11px] font-bold text-amber-300 bg-black/40 px-2.5 py-1 rounded-lg border border-amber-400/30 shrink-0 group-hover:bg-amber-400 group-hover:text-black transition">
+                <span className="text-[11px] font-bold text-rose-700 dark:text-amber-300 bg-white dark:bg-slate-900/70 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-amber-400/30 shrink-0 group-hover:bg-rose-600 group-hover:text-white transition shadow-2xs">
                   Dinle &rarr;
                 </span>
               </div>
@@ -1066,7 +1100,7 @@ export default function MitemasukaPage() {
 
       {/* HAMBURGER MENÜ */}
       {showHamburgerMenu && (
-        <div className="absolute top-[60px] right-3 w-72 bg-[#202c33] border border-[#2a3942] rounded-2xl shadow-2xl z-40 py-2 text-sm divide-y divide-[#2a3942]">
+        <div className="absolute top-[60px] right-3 w-72 bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-40 py-2 text-sm divide-y divide-slate-100 dark:divide-slate-700/80">
           <div className="px-3 py-2 space-y-2">
             {/* Bireysel Plus */}
             <button
@@ -1075,18 +1109,18 @@ export default function MitemasukaPage() {
                 setPaywallReason(null);
                 setShowPlusModal(true);
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border border-amber-400/40 text-amber-300 font-semibold hover:brightness-110 transition"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-semibold hover:bg-blue-100/70 dark:hover:bg-blue-900/50 transition"
             >
               <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400" />
+                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 {isPlus ? 'Mitemasuka Plus Aktif' : "Mitemasuka Plus'a Geç"}
               </span>
               <span className="flex flex-col items-end shrink-0">
-                <span className="text-xs bg-amber-400 text-black px-2 py-0.5 rounded-full font-bold">
+                <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
                   {isPlus ? 'VIP' : 'Yükselt'}
                 </span>
                 {!isPlus && (
-                  <span className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
                     Şimdilik Ücretsiz
                   </span>
                 )}
@@ -1099,38 +1133,40 @@ export default function MitemasukaPage() {
                 setShowHamburgerMenu(false);
                 setShowCreateChannelModal(true);
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-rose-500/25 to-orange-500/25 border border-rose-400/40 text-rose-200 font-semibold hover:brightness-110 transition"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200 font-semibold hover:bg-rose-100/70 dark:hover:bg-rose-900/50 transition"
             >
               <span className="flex items-center gap-2 text-left">
-                <Megaphone className="w-4 h-4 text-rose-400 shrink-0" />
+                <Megaphone className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                 <span>Kanal Kur (Tek Yönlü Seslen)</span>
               </span>
               <span className="flex flex-col items-end shrink-0">
-                <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold">
+                <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-bold">
                   PRO
                 </span>
-                <span className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
                   Şimdilik Ücretsiz
                 </span>
               </span>
             </button>
           </div>
 
-          <div className="py-1">
+          <div className="py-1 text-slate-700 dark:text-slate-200">
             <button
               onClick={() => {
                 setShowHamburgerMenu(false);
                 setShowStoryModal(true);
               }}
-              className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
-              <Info className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
               <div>
-                <div className="font-medium flex items-center gap-1.5">
+                <div className="font-semibold flex items-center gap-1.5 text-slate-900 dark:text-white">
                   <span>Mitemasuka Nedir?</span>
-                  <span className="text-[10px] text-[#00a884]">見てますか?</span>
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400">
+                    見てますか?
+                  </span>
                 </div>
-                <div className="text-[11px] text-[#8696a0]">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   &ldquo;Beni görüyor musun?&rdquo; hikayesi ve tanıtım
                 </div>
               </div>
@@ -1141,12 +1177,14 @@ export default function MitemasukaPage() {
                 setShowHamburgerMenu(false);
                 setShowQrModal(true);
               }}
-              className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
-              <QrCode className="w-4 h-4 text-[#00a884] shrink-0" />
+              <QrCode className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <div>
-                <div className="font-medium">Yakınındakini Ekle (QR Kod)</div>
-                <div className="text-[11px] text-[#8696a0]">
+                <div className="font-semibold text-slate-900 dark:text-white">
+                  Yakınındakini Ekle (QR Kod)
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
                   Çevrendeki kişiler okutup odaya katılsın
                 </div>
               </div>
@@ -1165,13 +1203,13 @@ export default function MitemasukaPage() {
                 setNicknameInput(myUsername);
                 setShowNicknameModal(true);
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <Edit3 className="w-4 h-4 text-blue-400" />
+                <Edit3 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>Takma Adımı Değiştir</span>
               </span>
-              {!isPlus && <Lock className="w-3.5 h-3.5 text-amber-400" />}
+              {!isPlus && <Lock className="w-3.5 h-3.5 text-amber-500" />}
             </button>
 
             <button
@@ -1186,20 +1224,20 @@ export default function MitemasukaPage() {
                 }
                 socket?.emit('set_ghost_mode', { enabled: !ghostMode });
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <Ghost className="w-4 h-4 text-purple-400" />
+                <Ghost className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 <span>Hayalet Modu (Sessiz Giriş)</span>
               </span>
               {!isPlus ? (
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                <Lock className="w-3.5 h-3.5 text-amber-500" />
               ) : (
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                     ghostMode
-                      ? 'bg-purple-500/30 text-purple-300'
-                      : 'bg-[#111b21] text-[#8696a0]'
+                      ? 'bg-violet-100 dark:bg-violet-500/30 text-violet-700 dark:text-violet-300'
+                      : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
                   }`}
                 >
                   {ghostMode ? 'Açık' : 'Kapalı'}
@@ -1219,21 +1257,21 @@ export default function MitemasukaPage() {
                   return next;
                 });
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
                 {roomNotifEnabled ? (
-                  <Volume2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 ) : (
-                  <VolumeX className="w-4 h-4 text-[#8696a0] shrink-0" />
+                  <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
                 <span>Oda Mesaj Bildirimi</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   roomNotifEnabled
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : 'bg-[#111b21] text-[#8696a0]'
+                    ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {roomNotifEnabled ? 'Açık' : 'Kapalı'}
@@ -1252,21 +1290,21 @@ export default function MitemasukaPage() {
                   return next;
                 });
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
                 {whisperNotifEnabled ? (
-                  <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
+                  <Volume2 className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
                 ) : (
-                  <VolumeX className="w-4 h-4 text-[#8696a0] shrink-0" />
+                  <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
                 <span>Özel Fısıltı Bildirimi</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   whisperNotifEnabled
-                    ? 'bg-amber-500/20 text-amber-300'
-                    : 'bg-[#111b21] text-[#8696a0]'
+                    ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {whisperNotifEnabled ? 'Açık' : 'Kapalı'}
@@ -1285,21 +1323,21 @@ export default function MitemasukaPage() {
                   return next;
                 });
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
                 {presenceNotifEnabled ? (
-                  <Volume2 className="w-4 h-4 text-blue-400 shrink-0" />
+                  <Volume2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 ) : (
-                  <VolumeX className="w-4 h-4 text-[#8696a0] shrink-0" />
+                  <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                 )}
                 <span>Giriş / Çıkış Uyarısı</span>
               </span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                   presenceNotifEnabled
-                    ? 'bg-blue-500/20 text-blue-300'
-                    : 'bg-[#111b21] text-[#8696a0]'
+                    ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {presenceNotifEnabled ? 'Açık' : 'Kapalı'}
@@ -1311,14 +1349,14 @@ export default function MitemasukaPage() {
                 setShowHamburgerMenu(false);
                 setShowRulesModal(true);
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left"
             >
               <span className="flex items-center gap-3">
-                <ShieldAlert className="w-4 h-4 text-rose-400" />
+                <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                 <span>Kurallar & Engellenenler</span>
               </span>
               {Object.keys(blockedClientIds).length > 0 && (
-                <span className="text-xs bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-full">
                   {Object.keys(blockedClientIds).length}
                 </span>
               )}
@@ -1331,7 +1369,7 @@ export default function MitemasukaPage() {
                 setShowSimBar((prev) => !prev);
                 setShowHamburgerMenu(false);
               }}
-              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2a3942] transition text-left text-amber-300"
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left text-amber-600 dark:text-amber-300"
             >
               <span className="flex items-center gap-3">
                 <FlaskConical className="w-4 h-4" />
@@ -1345,9 +1383,9 @@ export default function MitemasukaPage() {
 
       {/* ODADAKİ KİŞİLER ÇEKMECESİ */}
       {showMembersDrawer && (
-        <div className="bg-[#182229] border-b border-[#2a3942] px-4 py-3 text-xs space-y-2 shrink-0">
-          <div className="flex items-center justify-between text-[#8696a0]">
-            <span className="font-medium uppercase tracking-wider">
+        <div className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80 px-4 py-3 text-xs space-y-2 shrink-0">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="font-semibold uppercase tracking-wider">
               Odadaki Aktif Kişiler ({roomUsers.length}) — Özel fısıltı için
               isme tıklayın
             </span>
@@ -1366,7 +1404,7 @@ export default function MitemasukaPage() {
               return (
                 <div
                   key={u.id}
-                  className="flex items-center gap-1.5 bg-[#202c33] px-2.5 py-1.5 rounded-full border border-[#2a3942]"
+                  className="flex items-center gap-1.5 bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 shadow-2xs"
                 >
                   <span
                     className="w-2 h-2 rounded-full"
@@ -1385,26 +1423,26 @@ export default function MitemasukaPage() {
                       setWhisperTarget({ id: u.id, username: u.username });
                       setShowMembersDrawer(false);
                     }}
-                    className="font-medium hover:underline flex items-center gap-1"
+                    className="font-semibold hover:underline flex items-center gap-1"
                     style={{ color: u.color }}
                   >
                     {u.username}
                     {u.isPlus && <span className="text-[10px]">⚡</span>}
                   </button>
                   {isMe ? (
-                    <span className="text-[11px] text-[#8696a0]">(Sen)</span>
+                    <span className="text-[11px] text-slate-400">(Sen)</span>
                   ) : (
                     <>
                       {dist !== null && (
-                        <span className="text-[11px] text-[#00a884]">
+                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
                           • {dist}m
                         </span>
                       )}
                       <button
                         onClick={() => toggleBlockUser(u.clientId, u.username)}
                         title={isBlocked ? 'Engeli Kaldır' : 'Engelle'}
-                        className={`ml-1 p-0.5 rounded hover:bg-[#2a3942] ${
-                          isBlocked ? 'text-rose-400' : 'text-[#8696a0]'
+                        className={`ml-1 p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                          isBlocked ? 'text-rose-500' : 'text-slate-400'
                         }`}
                       >
                         <Ban className="w-3 h-3" />
@@ -1420,8 +1458,8 @@ export default function MitemasukaPage() {
 
       {/* YEREL TEST SİMÜLATÖR ÇUBUĞU */}
       {showSimBar && (
-        <div className="bg-amber-950/40 border-b border-amber-500/30 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-1.5 text-amber-300">
+        <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-500/30 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
             <FlaskConical className="w-4 h-4 shrink-0" />
             <span>
               <strong>Test Simülatörü:</strong> Bu sekmenin mesafesini kaydırın:
@@ -1443,10 +1481,10 @@ export default function MitemasukaPage() {
                   }
                   setSimOffsetMeters(item.offset);
                 }}
-                className={`px-2 py-1 rounded font-medium transition ${
+                className={`px-2 py-1 rounded-lg font-medium transition ${
                   simOffsetMeters === item.offset
-                    ? 'bg-amber-500 text-black font-bold'
-                    : 'bg-[#202c33] text-amber-200 hover:bg-[#2a3942]'
+                    ? 'bg-amber-500 text-white font-bold shadow-2xs'
+                    : 'bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-slate-700 hover:bg-amber-100 dark:hover:bg-slate-700'
                 }`}
               >
                 {item.label}
@@ -1456,23 +1494,28 @@ export default function MitemasukaPage() {
         </div>
       )}
 
-      {/* KONUM BEKLENİYOR */}
+      {/* KONUM BEKLENİYOR (Corsecure Hero Stili) */}
       {!effectiveCoords ? (
-        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-[#00a884]/15 border border-[#00a884]/40 flex items-center justify-center text-[#00a884] shadow-xl shrink-0">
+        <div className="relative flex-1 overflow-y-auto flex flex-col items-center justify-center p-5 text-center space-y-5 bg-white dark:bg-slate-900 bg-[linear-gradient(to_right,#f1f5f9_1px,transparent_1px),linear-gradient(to_bottom,#f1f5f9_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3.5rem_3.5rem]">
+          <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-lg shadow-blue-600/10 shrink-0">
             <MapPin className="w-8 h-8 animate-bounce" />
           </div>
 
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#202c33] border border-[#2a3942] text-xs text-[#00a884] font-semibold">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 font-semibold">
+              <span className="relative flex w-2 h-2">
+                <span className="absolute inline-flex w-full h-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex w-2 h-2 rounded-full bg-amber-500" />
+              </span>
               <span>見てますか?</span>
               <span>•</span>
               <span>Beni Görüyor Musun?</span>
             </div>
-            <h2 className="text-2xl font-extrabold tracking-tight text-white">
-              Mitemasuka
+            <h2 className="text-3xl font-extrabold tracking-tight uppercase">
+              <span className="text-slate-400 dark:text-slate-500">Mitema</span>
+              <span className="text-blue-700 dark:text-blue-400">suka</span>
             </h2>
-            <p className="text-xs sm:text-sm text-[#8696a0] max-w-md">
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-md leading-relaxed">
               100 metre çevrendeki gerçek insanlarla aynı odaya bağlanmak için
               aşağıdaki butona dokunarak konum izni verin.
             </p>
@@ -1481,7 +1524,7 @@ export default function MitemasukaPage() {
           <button
             onClick={startLocationTracking}
             disabled={isRequestingGeo}
-            className="w-full max-w-xs py-3.5 px-5 bg-[#00a884] hover:bg-[#06cf9c] active:scale-[0.99] text-[#111b21] font-extrabold rounded-2xl text-sm transition shadow-lg flex items-center justify-center gap-2"
+            className="w-full max-w-xs py-3.5 px-6 bg-blue-700 hover:bg-blue-800 active:scale-[0.99] text-white font-bold rounded-2xl text-sm transition shadow-md shadow-blue-700/20 flex items-center justify-center gap-2"
           >
             <RefreshCw
               className={`w-4 h-4 ${isRequestingGeo ? 'animate-spin' : ''}`}
@@ -1494,17 +1537,17 @@ export default function MitemasukaPage() {
           </button>
 
           {geoError === 'PERMISSION_DENIED' && (
-            <div className="w-full max-w-md bg-[#182229] border border-amber-500/40 rounded-2xl p-4 text-left space-y-2.5 text-xs shadow-lg">
-              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+            <div className="w-full max-w-md bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-500/40 rounded-3xl p-4 text-left space-y-2.5 text-xs shadow-lg">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-bold text-sm">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>Telefonunuz Tarayıcının Konum İznini Kapatmış</span>
               </div>
-              <p className="text-[#8696a0] leading-relaxed">
+              <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
                 iPhone&apos;da daha önce tarayıcı konum izni{' '}
                 <strong>&ldquo;Asla&rdquo;</strong> olarak seçildiyse telefon
                 size pencere çıkarmadan otomatik reddeder. Açmak için:
               </p>
-              <ol className="list-decimal list-inside space-y-1.5 text-[#e9edef] bg-[#111b21] p-3 rounded-xl border border-[#2a3942]">
+              <ol className="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
                 <li>
                   iPhone <strong>Ayarlar</strong> uygulamasına girin,
                 </li>
@@ -1515,7 +1558,7 @@ export default function MitemasukaPage() {
                 <li>
                   Aşağıdan <strong>Safari Web Siteleri</strong> (veya{' '}
                   <strong>Chrome</strong>) satırına girip{' '}
-                  <strong className="text-[#00a884]">
+                  <strong className="text-blue-600 dark:text-blue-400">
                     &ldquo;Uygulamayı Kullanırken&rdquo;
                   </strong>{' '}
                   seçin.
@@ -1526,14 +1569,14 @@ export default function MitemasukaPage() {
                     aA / sol ikon &rarr; Web Sitesi Ayarları &rarr; Konum &rarr;
                     İzin Ver
                   </strong>{' '}
-                  yapıp yukarıdaki yeşil butona tekrar basın.
+                  yapıp yukarıdaki mavi butona tekrar basın.
                 </li>
               </ol>
             </div>
           )}
 
           {geoError && geoError !== 'PERMISSION_DENIED' && (
-            <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3.5 py-2.5 rounded-xl max-w-md">
+            <div className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-3.5 py-2.5 rounded-2xl max-w-md">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{geoError}</span>
             </div>
@@ -1541,7 +1584,7 @@ export default function MitemasukaPage() {
 
           <button
             onClick={() => setShowStoryModal(true)}
-            className="px-4 py-2 bg-[#202c33] hover:bg-[#2a3942] text-[#e9edef] border border-[#2a3942] font-medium rounded-xl text-xs transition"
+            className="px-4 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium rounded-xl text-xs transition shadow-2xs"
           >
             📖 Mitemasuka Nedir? (見てますか?)
           </button>
@@ -1549,15 +1592,15 @@ export default function MitemasukaPage() {
       ) : (
         <main
           onClick={() => showHamburgerMenu && setShowHamburgerMenu(false)}
-          className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 bg-[#0b141a] bg-[radial-gradient(#1f2c34_1px,transparent_1px)] [background-size:20px_20px]"
+          className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 bg-slate-50/70 dark:bg-slate-900 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem]"
         >
           <div className="flex justify-center my-2">
-            <div className="bg-[#182229] border border-[#2a3942] text-[#8696a0] text-xs px-3.5 py-2 rounded-xl text-center max-w-md shadow">
-              <span className="text-[#00a884] font-semibold">
+            <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur border border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs">
+              <span className="text-blue-700 dark:text-blue-400 font-bold">
                 見てますか? (Beni görüyor musun?)
               </span>{' '}
               — Şu an{' '}
-              <strong className="text-white">
+              <strong className="text-slate-900 dark:text-white">
                 {selectedRadius >= 1000
                   ? `${selectedRadius / 1000} km`
                   : `${selectedRadius} metre`}
@@ -1570,15 +1613,15 @@ export default function MitemasukaPage() {
             if (item.kind === 'system') {
               const badgeStyle =
                 item.systemType === 'join'
-                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/40'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/40'
                   : item.systemType === 'leave'
-                  ? 'bg-rose-950/80 text-rose-300 border-rose-700/40'
-                  : 'bg-[#182229] text-[#8696a0] border-[#2a3942]';
+                  ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-700/40'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700';
 
               return (
                 <div key={item.id} className="flex justify-center my-1.5">
                   <span
-                    className={`text-xs px-3 py-1 rounded-full border shadow-sm ${badgeStyle}`}
+                    className={`text-xs px-3 py-1 rounded-full border shadow-2xs font-medium ${badgeStyle}`}
                   >
                     {item.systemType === 'join' && '🟢 '}
                     {item.systemType === 'leave' && '🔴 '}
@@ -1617,16 +1660,16 @@ export default function MitemasukaPage() {
                 }`}
               >
                 <div
-                  className={`relative max-w-[85%] sm:max-w-[72%] rounded-2xl px-3.5 py-2 shadow-md ${
+                  className={`relative max-w-[85%] sm:max-w-[72%] rounded-2xl px-3.5 py-2.5 shadow-sm transition-colors ${
                     isWhisper
-                      ? 'bg-purple-950/90 border border-purple-500/50 text-purple-100'
+                      ? 'bg-violet-50 dark:bg-violet-950/90 border border-violet-200 dark:border-violet-500/50 text-violet-950 dark:text-violet-100'
                       : isMine
-                      ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none'
-                      : 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
+                      ? 'bg-blue-600 text-white rounded-tr-xs shadow-blue-600/15'
+                      : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-xs border border-slate-200/90 dark:border-slate-700'
                   }`}
                 >
                   {isWhisper && (
-                    <div className="flex items-center gap-1 text-[10px] font-semibold text-purple-300 mb-1 pb-1 border-b border-purple-500/30">
+                    <div className="flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 mb-1 pb-1 border-b border-violet-200 dark:border-violet-500/30">
                       <MessageSquareLock className="w-3 h-3" />
                       <span>
                         Özel Fısıltı:{' '}
@@ -1656,17 +1699,19 @@ export default function MitemasukaPage() {
                           }
                         }}
                         className="text-xs font-bold hover:underline flex items-center gap-1"
-                        style={{ color: item.senderColor || '#34D399' }}
+                        style={{ color: item.senderColor || '#2563EB' }}
                       >
                         <span>{item.senderName}</span>
                         {item.senderIsPlus && (
-                          <span className="text-[10px] text-amber-300">⚡</span>
+                          <span className="text-[10px] text-amber-500 dark:text-amber-300">
+                            ⚡
+                          </span>
                         )}
                       </button>
 
                       <div className="flex items-center gap-1.5">
                         {distanceFromMe !== null && (
-                          <span className="text-[10px] text-[#8696a0] bg-[#111b21]/60 px-1.5 py-0.5 rounded">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900/60 px-1.5 py-0.5 rounded font-medium">
                             {distanceFromMe}m
                           </span>
                         )}
@@ -1679,7 +1724,7 @@ export default function MitemasukaPage() {
                               )
                             }
                             title="Kötü Amaçlı Bildir"
-                            className="opacity-60 hover:opacity-100 text-rose-400"
+                            className="opacity-60 hover:opacity-100 text-rose-500 dark:text-rose-400"
                           >
                             <ShieldAlert className="w-3 h-3" />
                           </button>
@@ -1689,11 +1734,29 @@ export default function MitemasukaPage() {
                   )}
 
                   {item.replyTo && (
-                    <div className="mb-1.5 px-2.5 py-1 rounded bg-black/25 border-l-2 border-[#00a884] text-xs">
-                      <div className="font-semibold text-[#00a884]">
+                    <div
+                      className={`mb-1.5 px-2.5 py-1 rounded-lg border-l-2 text-xs ${
+                        isMine
+                          ? 'bg-blue-700/60 border-white/80 text-blue-50'
+                          : 'bg-slate-100 dark:bg-slate-900/60 border-blue-600 dark:border-blue-400'
+                      }`}
+                    >
+                      <div
+                        className={`font-semibold ${
+                          isMine
+                            ? 'text-white'
+                            : 'text-blue-700 dark:text-blue-400'
+                        }`}
+                      >
                         {item.replyTo.senderName}
                       </div>
-                      <div className="text-[#8696a0] truncate">
+                      <div
+                        className={`truncate ${
+                          isMine
+                            ? 'text-blue-100'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
                         {item.replyTo.text}
                       </div>
                     </div>
@@ -1703,12 +1766,24 @@ export default function MitemasukaPage() {
                     <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                       {item.text}
                     </p>
-                    <span className="text-[10px] text-[#8696a0] shrink-0 select-none translate-y-0.5">
+                    <span
+                      className={`text-[10px] shrink-0 select-none translate-y-0.5 ${
+                        isMine
+                          ? 'text-blue-100/90'
+                          : 'text-slate-400 dark:text-slate-400'
+                      }`}
+                    >
                       {formatTime(item.timestamp)}
                     </span>
                   </div>
 
-                  <div className="mt-1 pt-1 border-t border-white/5 flex items-center justify-between gap-2 opacity-80 group-hover:opacity-100 transition">
+                  <div
+                    className={`mt-1.5 pt-1 border-t flex items-center justify-between gap-2 opacity-85 group-hover:opacity-100 transition ${
+                      isMine
+                        ? 'border-white/15'
+                        : 'border-slate-100 dark:border-white/5'
+                    }`}
+                  >
                     <div className="flex items-center gap-1">
                       {EMOJI_LIST.map((em) => {
                         const count = item.reactions?.[em]?.length || 0;
@@ -1723,8 +1798,12 @@ export default function MitemasukaPage() {
                             }
                             className={`text-[11px] px-1.5 py-0.5 rounded-full transition ${
                               count > 0
-                                ? 'bg-[#00a884]/30 text-white font-semibold'
-                                : 'hover:bg-white/10 text-[#8696a0]'
+                                ? isMine
+                                  ? 'bg-white/25 text-white font-semibold'
+                                  : 'bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-500/30'
+                                : isMine
+                                ? 'hover:bg-white/15 text-blue-100'
+                                : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400'
                             }`}
                           >
                             {em} {count > 0 && count}
@@ -1741,7 +1820,11 @@ export default function MitemasukaPage() {
                           text: item.text,
                         })
                       }
-                      className="text-[11px] text-[#8696a0] hover:text-white flex items-center gap-1"
+                      className={`text-[11px] flex items-center gap-1 font-medium ${
+                        isMine
+                          ? 'text-blue-100 hover:text-white'
+                          : 'text-slate-400 hover:text-blue-600 dark:hover:text-white'
+                      }`}
                     >
                       <Reply className="w-3 h-3" />
                       <span>Yanıtla</span>
@@ -1753,7 +1836,7 @@ export default function MitemasukaPage() {
           })}
 
           {activeTypingNames.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-[#00a884] italic pl-2">
+            <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-medium italic pl-2">
               <span className="animate-pulse">●</span>
               <span>{activeTypingNames.join(', ')} yazıyor...</span>
             </div>
@@ -1765,9 +1848,9 @@ export default function MitemasukaPage() {
 
       {/* YANITLAMA VEYA ÖZEL FISILTI ÇUBUĞU */}
       {(replyingTo || whisperTarget) && (
-        <div className="bg-[#182229] px-4 py-2 border-t border-[#2a3942] flex items-center justify-between text-xs">
+        <div className="bg-slate-100 dark:bg-slate-800 px-4 py-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-xs">
           {whisperTarget ? (
-            <div className="flex items-center gap-2 text-purple-300">
+            <div className="flex items-center gap-2 text-violet-700 dark:text-violet-300 font-medium">
               <MessageSquareLock className="w-4 h-4" />
               <span>
                 <strong>{whisperTarget.username}</strong> kişisine 1-e-1 Özel
@@ -1776,10 +1859,10 @@ export default function MitemasukaPage() {
             </div>
           ) : (
             replyingTo && (
-              <div className="flex items-center gap-2 text-[#8696a0] truncate">
-                <Reply className="w-4 h-4 text-[#00a884] shrink-0" />
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 truncate">
+                <Reply className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span className="truncate">
-                  <strong className="text-[#00a884]">
+                  <strong className="text-blue-700 dark:text-blue-400">
                     {replyingTo.senderName}:
                   </strong>{' '}
                   {replyingTo.text}
@@ -1792,15 +1875,15 @@ export default function MitemasukaPage() {
               setReplyingTo(null);
               setWhisperTarget(null);
             }}
-            className="p-1 text-[#8696a0] hover:text-white"
+            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* ALT MESAJ YAZMA ALANI (2 SATIRLI TASARIM) */}
-      <footer className="bg-[#202c33] px-3 pt-2.5 pb-2 border-t border-[#2a3942] shrink-0 space-y-2">
+      {/* ALT MESAJ YAZMA ALANI (2 SATIRLI CORSECURE TASARIMI) */}
+      <footer className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl px-3 pt-2.5 pb-2 border-t border-slate-200/80 dark:border-slate-800 shrink-0 space-y-2 transition-colors">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2">
           <input
             type="text"
@@ -1817,7 +1900,7 @@ export default function MitemasukaPage() {
                 ? `${selectedRadius >= 1000 ? selectedRadius / 1000 + ' km' : selectedRadius + 'm'} odasına mesaj yazın...`
                 : 'Önce konum izni verin...'
             }
-            className="flex-1 min-w-0 bg-[#2a3942] text-[#e9edef] placeholder-[#8696a0] text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#00a884]"
+            className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 border border-slate-200/80 dark:border-slate-700 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white dark:focus:bg-slate-800 transition"
           />
 
           <button
@@ -1825,13 +1908,13 @@ export default function MitemasukaPage() {
             disabled={
               !inputText.trim() || !effectiveCoords || !isConnected || isBanned
             }
-            className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#06cf9c] disabled:opacity-40 text-[#111b21] flex items-center justify-center transition shrink-0 shadow-md"
+            className="w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white flex items-center justify-center transition shrink-0 shadow-sm shadow-blue-600/20"
           >
             <Send className="w-5 h-5 translate-x-[1px]" />
           </button>
         </form>
 
-        <div className="flex items-center justify-between px-1 text-[11px] text-[#8696a0]">
+        <div className="flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
           <button
             type="button"
             onClick={() => {
@@ -1840,24 +1923,29 @@ export default function MitemasukaPage() {
             }}
             className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border transition ${
               isPlus
-                ? 'bg-amber-500/15 border-amber-400/40 text-amber-300 font-semibold'
+                ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-300 dark:border-amber-400/40 text-amber-700 dark:text-amber-300 font-semibold'
                 : remainingQuota <= 3
-                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse'
-                : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
+                ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-300 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 animate-pulse'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {isPlus ? (
               <>
-                <Sparkles className="w-3 h-3 text-amber-400" />
+                <Sparkles className="w-3 h-3 text-amber-500 dark:text-amber-400" />
                 <span>Mitemasuka Plus • Sınırsız</span>
               </>
             ) : (
               <>
                 <span>
-                  Hak: <strong className="text-white">{remainingQuota}</strong>/
-                  {dailyLimit}
+                  Hak:{' '}
+                  <strong className="text-slate-900 dark:text-white">
+                    {remainingQuota}
+                  </strong>
+                  /{dailyLimit}
                 </span>
-                <span className="text-amber-400 font-medium">• Sınırsız ⚡</span>
+                <span className="text-blue-600 dark:text-amber-400 font-semibold">
+                  • Sınırsız ⚡
+                </span>
               </>
             )}
           </button>
@@ -1865,38 +1953,40 @@ export default function MitemasukaPage() {
           <button
             type="button"
             onClick={() => setShowStoryModal(true)}
-            className="hover:text-[#00a884] transition truncate ml-2"
+            className="hover:text-blue-600 dark:hover:text-blue-400 transition truncate ml-2"
           >
-            <span className="text-[#00a884] font-medium">見てますか?</span> • Beni
-            görüyor musun?
+            <span className="text-blue-700 dark:text-blue-400 font-semibold">
+              見てますか?
+            </span>{' '}
+            • Beni görüyor musun?
           </button>
         </div>
       </footer>
 
       {/* MODAL: 📢 TEK YÖNLÜ KANAL (MEGAFON) KURMA EKRANI */}
       {showCreateChannelModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleCreateChannel}
-            className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto"
           >
             <button
               type="button"
               onClick={() => setShowCreateChannelModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/40 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
                 <Megaphone className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   Tek Yönlü Kanal Kur 📢
                 </h3>
-                <p className="text-xs text-[#8696a0]">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Konser, miting, konferans veya gezilerde çevrendekilere yazılı
                   ve sesli altyazı ile tek yönlü seslen
                 </p>
@@ -1904,7 +1994,7 @@ export default function MitemasukaPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#8696a0]">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                 Kanal / Etkinlik Başlığı
               </label>
               <input
@@ -1914,16 +2004,16 @@ export default function MitemasukaPage() {
                 value={channelTitleInput}
                 onChange={(e) => setChannelTitleInput(e.target.value)}
                 placeholder="Örn: Ana Sahne Canlı Altyazı / Miting Anons..."
-                className="w-full bg-[#111b21] border border-[#2a3942] rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-[#8696a0]">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                   Yayın Menzili & Paketi Seçin
                 </label>
-                <span className="text-[11px] text-emerald-400 font-semibold">
+                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                   ✨ Tanıtıma Özel Şimdilik Ücretsiz
                 </span>
               </div>
@@ -1935,28 +2025,28 @@ export default function MitemasukaPage() {
                     onClick={() => setSelectedChannelPlan(pkg)}
                     className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-between ${
                       selectedChannelPlan.id === pkg.id
-                        ? 'bg-rose-500/20 border-rose-400 text-white shadow-lg'
-                        : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
+                        ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-500 text-slate-900 dark:text-white shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                     }`}
                   >
-                    <span className="text-[10px] font-bold text-rose-300 uppercase">
+                    <span className="text-[10px] font-bold text-rose-600 dark:text-rose-300 uppercase">
                       {pkg.rangeLabel}
                     </span>
                     <div className="my-1 flex flex-col items-center">
-                      <span className="relative inline-block text-sm font-bold text-[#8696a0] line-through decoration-rose-500 decoration-2">
+                      <span className="relative inline-block text-sm font-bold text-slate-400 line-through decoration-rose-500 decoration-2">
                         {pkg.price}
                         <span className="absolute inset-0 flex items-center justify-center text-rose-500 font-black text-base pointer-events-none">
                           ✕
                         </span>
                       </span>
-                      <span className="text-xs font-extrabold text-emerald-400">
+                      <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
                         Ücretsiz
                       </span>
                     </div>
                     <span className="text-[11px] font-medium leading-tight">
                       {pkg.title}
                     </span>
-                    <span className="text-[9px] text-[#8696a0] mt-0.5">
+                    <span className="text-[9px] text-slate-400 mt-0.5">
                       {pkg.duration}
                     </span>
                   </button>
@@ -1964,7 +2054,7 @@ export default function MitemasukaPage() {
               </div>
             </div>
 
-            <div className="bg-[#111b21] p-3 rounded-2xl border border-[#2a3942] text-xs text-[#8696a0] space-y-1">
+            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 space-y-1">
               <div>
                 🎙️ <strong>Canlı Sesli Altyazı (Speech-to-Text):</strong> Siz
                 mikrofona konuştukça cümleleriniz otomatik yazıya çevrilip
@@ -1979,7 +2069,7 @@ export default function MitemasukaPage() {
             <button
               type="submit"
               disabled={!channelTitleInput.trim()}
-              className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 text-black font-extrabold text-sm hover:brightness-110 transition shadow-lg disabled:opacity-40"
+              className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm transition shadow-md shadow-rose-600/20 disabled:opacity-40"
             >
               📢 Kanalı Ücretsiz Başlat ({selectedChannelPlan.rangeLabel})
             </button>
@@ -1989,26 +2079,29 @@ export default function MitemasukaPage() {
 
       {/* TAM EKRAN TEK YÖNLÜ CANLI KANAL (MEGAFON) İZLEME & YAYIN PANELİ */}
       {activeChannel && (
-        <div className="fixed inset-0 bg-[#0b141a] z-50 flex flex-col max-w-2xl mx-auto border-x border-[#222d34]">
+        <div className="fixed inset-0 bg-slate-50 dark:bg-slate-900 z-50 flex flex-col max-w-2xl mx-auto border-x border-slate-200 dark:border-slate-800">
           {/* Kanal Üst Barı */}
-          <div className="bg-gradient-to-r from-rose-950 via-[#202c33] to-rose-950 px-4 py-3 border-b border-rose-500/30 flex items-center justify-between gap-2 shrink-0">
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl px-4 py-3 border-b border-rose-200 dark:border-rose-500/30 flex items-center justify-between gap-2 shrink-0">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold uppercase animate-pulse">
                   🔴 CANLI KANAL
                 </span>
-                <span className="text-xs text-amber-300 font-semibold">
+                <span className="text-xs text-rose-600 dark:text-amber-300 font-semibold">
                   {activeChannel.radius >= 1000
                     ? `${activeChannel.radius / 1000} km`
                     : `${activeChannel.radius} m`}{' '}
                   Menzil • {activeChannel.listenerCount || 1} Dinleyici
                 </span>
               </div>
-              <h2 className="text-base font-extrabold text-white truncate mt-1">
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white truncate mt-1">
                 📢 {activeChannel.title}
               </h2>
-              <p className="text-xs text-[#8696a0]">
-                Konuşmacı: <strong className="text-white">{activeChannel.ownerName}</strong>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Konuşmacı:{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  {activeChannel.ownerName}
+                </strong>
               </p>
             </div>
 
@@ -2021,14 +2114,14 @@ export default function MitemasukaPage() {
                     });
                     setActiveChannelId(null);
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-rose-600/20 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-600 hover:text-white transition"
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-600/20 border border-rose-200 dark:border-rose-500/40 text-rose-600 dark:text-rose-300 text-xs font-bold hover:bg-rose-600 hover:text-white transition"
                 >
                   Yayını Bitir
                 </button>
               )}
               <button
                 onClick={() => setActiveChannelId(null)}
-                className="p-2 rounded-xl bg-[#111b21] border border-[#2a3942] text-[#e9edef]"
+                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2040,25 +2133,25 @@ export default function MitemasukaPage() {
             {activeChannel.messages.map((bMsg) => (
               <div
                 key={bMsg.id}
-                className="bg-[#202c33] border border-[#2a3942] rounded-2xl p-4 shadow-lg space-y-1.5"
+                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-1.5"
               >
-                <div className="flex items-center justify-between text-xs text-[#8696a0]">
-                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                <div className="flex items-center justify-between text-xs text-slate-400">
+                  <span className="font-bold text-rose-600 dark:text-amber-300 flex items-center gap-1.5">
                     {bMsg.isLiveVoice ? (
                       <>
-                        <Mic className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                        <Mic className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
                         <span>Canlı Sesli Altyazı</span>
                       </>
                     ) : (
                       <>
-                        <Megaphone className="w-3.5 h-3.5 text-amber-400" />
+                        <Megaphone className="w-3.5 h-3.5 text-blue-600 dark:text-amber-400" />
                         <span>Yazılı Duyuru</span>
                       </>
                     )}
                   </span>
                   <span>{formatTime(bMsg.timestamp)}</span>
                 </div>
-                <p className="text-base sm:text-lg font-medium text-white leading-relaxed whitespace-pre-wrap">
+                <p className="text-base sm:text-lg font-medium text-slate-900 dark:text-white leading-relaxed whitespace-pre-wrap">
                   {bMsg.text}
                 </p>
               </div>
@@ -2066,7 +2159,7 @@ export default function MitemasukaPage() {
 
             {/* Konuşmacı o an konuşurken anlık önizleme */}
             {liveTranscriptPreview && (
-              <div className="bg-rose-950/40 border border-rose-500/40 rounded-2xl p-4 text-rose-200 italic animate-pulse">
+              <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/40 rounded-2xl p-4 text-rose-700 dark:text-rose-200 italic animate-pulse">
                 🎙️ {liveTranscriptPreview}...
               </div>
             )}
@@ -2075,10 +2168,12 @@ export default function MitemasukaPage() {
           </div>
 
           {/* Kanal Alt Barı: Canlı Tepkiler + (Sadece Yayıncı İçin) Sesli Dikte & Mesaj Gönderme */}
-          <div className="bg-[#202c33] p-3 border-t border-[#2a3942] space-y-2.5 shrink-0">
+          <div className="bg-white dark:bg-slate-900 p-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 shrink-0">
             {/* Dinleyici Alkış / Tepki Barı */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-[#8696a0]">Canlı Tepki Ver:</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Canlı Tepki Ver:
+              </span>
               <div className="flex items-center gap-2">
                 {CHANNEL_REACTIONS.map((em) => (
                   <button
@@ -2089,10 +2184,10 @@ export default function MitemasukaPage() {
                         emoji: em,
                       })
                     }
-                    className="px-3 py-1.5 rounded-full bg-[#111b21] hover:bg-[#2a3942] border border-[#2a3942] text-xs font-bold flex items-center gap-1.5 active:scale-95 transition"
+                    className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition"
                   >
                     <span>{em}</span>
-                    <span className="text-amber-300">
+                    <span className="text-blue-600 dark:text-amber-300">
                       {activeChannel.reactions?.[em] || 0}
                     </span>
                   </button>
@@ -2110,8 +2205,8 @@ export default function MitemasukaPage() {
                   onClick={toggleLiveVoiceDictation}
                   className={`px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 transition ${
                     isDictating
-                      ? 'bg-rose-600 text-white animate-pulse shadow-lg'
-                      : 'bg-[#111b21] border border-[#2a3942] text-rose-300 hover:text-white'
+                      ? 'bg-rose-600 text-white animate-pulse shadow-md'
+                      : 'bg-rose-50 dark:bg-slate-800 border border-rose-200 dark:border-slate-700 text-rose-600 dark:text-rose-300'
                   }`}
                   title="Mikrofona konuştuğunuzu otomatik yazıya çevirip herkese gönderir"
                 >
@@ -2134,19 +2229,19 @@ export default function MitemasukaPage() {
                   value={channelInputText}
                   onChange={(e) => setChannelInputText(e.target.value)}
                   placeholder="Tüm dinleyicilere yazılı duyuru gönder..."
-                  className="flex-1 min-w-0 bg-[#2a3942] text-white placeholder-[#8696a0] text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 text-sm rounded-xl px-4 py-2.5 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
 
                 <button
                   type="submit"
                   disabled={!channelInputText.trim()}
-                  className="w-10 h-10 rounded-full bg-rose-500 hover:bg-rose-400 disabled:opacity-40 text-black flex items-center justify-center shrink-0"
+                  className="w-10 h-10 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white flex items-center justify-center shrink-0"
                 >
                   <Send className="w-5 h-5 translate-x-[1px]" />
                 </button>
               </form>
             ) : (
-              <div className="text-center text-xs text-[#8696a0] bg-[#111b21] py-2 rounded-xl border border-[#2a3942]">
+              <div className="text-center text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
                 🔇 Bu tek yönlü bir anons kanalıdır. Sadece konuşmacı (
                 <strong>{activeChannel.ownerName}</strong>) ileti gönderebilir.
               </div>
@@ -2157,25 +2252,25 @@ export default function MitemasukaPage() {
 
       {/* MODAL 0: 📖 MITEMASUKA NEDİR? */}
       {showStoryModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowStoryModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-[#00a884]" />
+              <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               {(['tr', 'en', 'jp'] as const).map((lng) => (
                 <button
                   key={lng}
                   onClick={() => setActiveStoryLang(lng)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase transition ${
                     activeStoryLang === lng
-                      ? 'bg-[#00a884] text-black'
-                      : 'bg-[#111b21] text-[#8696a0] hover:text-white'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   {lng === 'tr' ? '🇹🇷 TR' : lng === 'en' ? '🇬🇧 EN' : '🇯🇵 JP'}
@@ -2185,24 +2280,24 @@ export default function MitemasukaPage() {
 
             {activeStoryLang === 'tr' && (
               <div className="space-y-3 text-sm leading-relaxed">
-                <div className="inline-block px-3 py-1 rounded-full bg-[#00a884]/15 text-[#00a884] text-xs font-bold">
+                <div className="inline-block px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-bold">
                   見てますか? • Mitemasuka? • &ldquo;Beni Görüyor Musun?&rdquo;
                 </div>
-                <h3 className="text-xl font-extrabold text-white">
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
                   Aynı Mekandayız, Ama Birbirimizi Görüyor Muyuz?
                 </h3>
-                <p className="text-[#e9edef]/90 text-xs sm:text-sm">
+                <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm">
                   Her gün kafelerde, üniversite kampüslerinde, konserlerde,
                   kütüphanelerde veya etkinliklerde yan yana oturuyoruz. Binlerce
                   kilometre uzaktaki yabancılarla sosyal medyada konuşurken,
                   <strong> tam 10 metre ötemizdeki </strong> insanlarla tek
                   kelime etmeden yanlarından geçip gidiyoruz.
                 </p>
-                <div className="bg-[#111b21] p-3.5 rounded-2xl border border-[#2a3942] space-y-2 text-xs">
-                  <div className="font-bold text-amber-300">
+                <div className="bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                  <div className="font-bold text-blue-700 dark:text-amber-300">
                     ✨ İsmin Doğuş Hikayesi:
                   </div>
-                  <p className="text-[#8696a0]">
+                  <p className="text-slate-600 dark:text-slate-300">
                     Japoncada{' '}
                     <strong>&ldquo;Mitemasu ka?&rdquo; (見てますか?)</strong>,{' '}
                     <em>&ldquo;Beni görüyor musun? / Etrafına bakıyor musun?&rdquo;</em>{' '}
@@ -2212,8 +2307,8 @@ export default function MitemasukaPage() {
                     olarak duyulmasıyla doğdu.
                   </p>
                 </div>
-                <div className="space-y-1.5 text-xs text-[#e9edef]/90">
-                  <div className="font-bold text-[#00a884]">
+                <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-200">
+                  <div className="font-bold text-blue-700 dark:text-blue-400">
                     🚀 Nasıl Çalışır?
                   </div>
                   <p>
@@ -2237,20 +2332,20 @@ export default function MitemasukaPage() {
 
             {activeStoryLang === 'en' && (
               <div className="space-y-3 text-sm leading-relaxed">
-                <div className="inline-block px-3 py-1 rounded-full bg-[#00a884]/15 text-[#00a884] text-xs font-bold">
+                <div className="inline-block px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-bold">
                   見てますか? • Mitemasuka? • &ldquo;Do You See Me?&rdquo;
                 </div>
-                <h3 className="text-xl font-extrabold text-white">
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
                   We Are in the Same Place, But Do We Really See Each Other?
                 </h3>
-                <p className="text-[#e9edef]/90 text-xs sm:text-sm">
+                <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm">
                   Every day in cafes, university campuses, festivals, and
                   lounges, we sit just meters apart—yet remain complete
                   strangers. <strong>Mitemasuka (見てますか?)</strong> means{' '}
                   <em>&ldquo;Are you looking? / Do you see me?&rdquo;</em> in
                   Japanese.
                 </p>
-                <div className="bg-[#111b21] p-3.5 rounded-2xl border border-[#2a3942] space-y-1.5 text-xs text-[#8696a0]">
+                <div className="bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                   <p>
                     • <strong>Zero Friction:</strong> No app store downloads, no
                     sign-up forms. Open <code>mitemasuka.com</code> and join your
@@ -2267,13 +2362,13 @@ export default function MitemasukaPage() {
 
             {activeStoryLang === 'jp' && (
               <div className="space-y-3 text-sm leading-relaxed">
-                <div className="inline-block px-3 py-1 rounded-full bg-[#00a884]/15 text-[#00a884] text-xs font-bold">
+                <div className="inline-block px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-bold">
                   見てますか? • Mitemasuka
                 </div>
-                <h3 className="text-xl font-extrabold text-white">
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
                   同じ場所にいるのに、お互いが見えていますか？
                 </h3>
-                <p className="text-[#e9edef]/90 text-xs sm:text-sm">
+                <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm">
                   カフェ、キャンパス、イベント会場で、すぐ隣にいる人と今すぐつながる。
                   <strong>Mitemasuka (見てますか?)</strong>{' '}
                   は、半径100メートル以内にいる人たちだけをリアルタイムで同じチャットルームにつなぐハイパーローカルPWAです。
@@ -2283,7 +2378,7 @@ export default function MitemasukaPage() {
 
             <button
               onClick={() => setShowStoryModal(false)}
-              className="w-full py-2.5 bg-[#00a884] text-black font-bold rounded-xl text-sm"
+              className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl text-sm transition"
             >
               Radara Dön
             </button>
@@ -2293,59 +2388,59 @@ export default function MitemasukaPage() {
 
       {/* MODAL 1: ⚡ MITEMASUKA PLUS PAYWALL */}
       {showPlusModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
             <button
               onClick={() => setShowPlusModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400">
                 <Sparkles className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   Mitemasuka Plus ⚡
                 </h3>
-                <p className="text-xs text-[#8696a0]">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   見てますか? — Tüm menzillerde sınırsız tanış
                 </p>
               </div>
             </div>
 
             {paywallReason && (
-              <div className="bg-amber-500/15 border border-amber-400/40 text-amber-200 text-xs px-3.5 py-2.5 rounded-xl">
+              <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/40 text-amber-800 dark:text-amber-200 text-xs px-3.5 py-2.5 rounded-xl">
                 🔒 {paywallReason}
               </div>
             )}
 
-            <div className="space-y-2 text-xs text-[#e9edef] bg-[#111b21] p-3.5 rounded-2xl border border-[#2a3942]">
+            <div className="space-y-2 text-xs text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700">
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#00a884] shrink-0" />
+                <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span>
                   <strong>Sınırsız Mesajlaşma:</strong> Günlük 15 mesaj kotasını
                   kaldır
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#00a884] shrink-0" />
+                <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span>
                   <strong>Tüm Menziller Açık:</strong> 500m, 1 km ve 5 km
                   odalarına eriş
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#00a884] shrink-0" />
+                <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span>
                   <strong>1-e-1 Özel Fısıltı (DM):</strong> Odadaki istediğin
                   kişiyle özel konuş
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#00a884] shrink-0" />
+                <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span>
                   <strong>Özel Rumuz & 👻 Hayalet Modu:</strong> Kendi adını seç
                   veya odaya sessizce gir
@@ -2354,7 +2449,7 @@ export default function MitemasukaPage() {
             </div>
 
             <div className="space-y-2">
-              <div className="text-center text-xs text-emerald-400 font-semibold">
+              <div className="text-center text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
                 ✨ Tanışma dönemimize özel tüm Plus ayrıcalıkları şimdilik
                 ücretsizdir
               </div>
@@ -2384,25 +2479,25 @@ export default function MitemasukaPage() {
                     onClick={() => setSelectedPlanOption(pkg.id)}
                     className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-between ${
                       selectedPlanOption === pkg.id
-                        ? 'bg-amber-400/15 border-amber-400 text-white shadow-lg'
-                        : 'bg-[#111b21] border-[#2a3942] text-[#8696a0] hover:text-white'
+                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-600 text-slate-900 dark:text-white shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
                     }`}
                   >
-                    <span className="text-[10px] uppercase tracking-wider text-amber-300 font-semibold">
+                    <span className="text-[10px] uppercase tracking-wider text-blue-600 dark:text-blue-400 font-semibold">
                       {pkg.sub}
                     </span>
                     <div className="my-1 flex flex-col items-center">
-                      <span className="relative inline-block text-sm font-bold text-[#8696a0] line-through decoration-rose-500 decoration-2">
+                      <span className="relative inline-block text-sm font-bold text-slate-400 line-through decoration-rose-500 decoration-2">
                         {pkg.price}
                         <span className="absolute inset-0 flex items-center justify-center text-rose-500 font-black text-base pointer-events-none">
                           ✕
                         </span>
                       </span>
-                      <span className="text-xs font-extrabold text-emerald-400">
+                      <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
                         Ücretsiz
                       </span>
                     </div>
-                    <span className="text-[11px]">{pkg.title}</span>
+                    <span className="text-[11px] font-medium">{pkg.title}</span>
                   </button>
                 ))}
               </div>
@@ -2410,7 +2505,7 @@ export default function MitemasukaPage() {
 
             <button
               onClick={handleActivatePlus}
-              className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 to-emerald-400 text-black font-bold text-sm hover:brightness-110 transition shadow-lg"
+              className="w-full py-3 rounded-2xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm transition shadow-md shadow-blue-700/20"
             >
               ⚡ Seçili Paketi Ücretsiz Aktif Et
             </button>
@@ -2420,28 +2515,28 @@ export default function MitemasukaPage() {
 
       {/* MODAL 2: 📲 YAKININDAKİNİ EKLE (QR KOD) */}
       {showQrModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-sm w-full p-6 space-y-4 text-center shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 space-y-4 text-center shadow-2xl relative">
             <button
               onClick={() => setShowQrModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-[#00a884]/20 flex items-center justify-center text-[#00a884]">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400">
               <QrCode className="w-6 h-6" />
             </div>
 
-            <h3 className="text-base font-bold">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
               Yakınındakini Odaya Çağır (見てますか?)
             </h3>
-            <p className="text-xs text-[#8696a0]">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Bulunduğun kafede, kampüste veya mekanda yakınındaki kişilere bu
               QR kodu okut. 100m içindeyseler otomatik olarak bu odaya düşerler!
             </p>
 
-            <div className="bg-white p-4 rounded-2xl inline-block mx-auto shadow-inner">
+            <div className="bg-white p-4 rounded-2xl inline-block mx-auto border border-slate-200 shadow-xs">
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
                   currentUrl
@@ -2451,8 +2546,8 @@ export default function MitemasukaPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2 bg-[#111b21] p-2 rounded-xl border border-[#2a3942]">
-              <span className="text-xs text-[#8696a0] truncate flex-1 font-mono">
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+              <span className="text-xs text-slate-600 dark:text-slate-300 truncate flex-1 font-mono">
                 {currentUrl}
               </span>
               <button
@@ -2461,7 +2556,7 @@ export default function MitemasukaPage() {
                   setCopiedLink(true);
                   setTimeout(() => setCopiedLink(false), 2000);
                 }}
-                className="px-3 py-1.5 bg-[#00a884] text-black text-xs font-bold rounded-lg flex items-center gap-1"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition"
               >
                 {copiedLink ? (
                   <>
@@ -2480,21 +2575,21 @@ export default function MitemasukaPage() {
 
       {/* MODAL 3: ✏️ ÖZEL TAKMA AD DEĞİŞTİRME */}
       {showNicknameModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSaveNickname}
-            className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative"
           >
             <button
               type="button"
               onClick={() => setShowNicknameModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-base font-bold flex items-center gap-2">
-              <Edit3 className="w-5 h-5 text-amber-400" />
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               <span>Takma Adını Değiştir (Plus)</span>
             </h3>
             <input
@@ -2503,11 +2598,11 @@ export default function MitemasukaPage() {
               value={nicknameInput}
               onChange={(e) => setNicknameInput(e.target.value)}
               placeholder="Yeni takma adınız..."
-              className="w-full bg-[#111b21] border border-[#2a3942] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00a884]"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
             <button
               type="submit"
-              className="w-full py-2.5 bg-[#00a884] text-black font-bold rounded-xl text-sm"
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition"
             >
               Kaydet
             </button>
@@ -2517,21 +2612,21 @@ export default function MitemasukaPage() {
 
       {/* MODAL 4: 🛡️ KURALLAR & ENGELLENEN KULLANICILAR */}
       {showRulesModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#202c33] border border-[#2a3942] rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
             <button
               onClick={() => setShowRulesModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full bg-[#111b21] text-[#8696a0] hover:text-white"
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-base font-bold flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-rose-400" />
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-rose-500" />
               <span>Topluluk Kuralları & Engellenenler</span>
             </h3>
 
-            <ul className="text-xs text-[#8696a0] space-y-2 bg-[#111b21] p-3.5 rounded-2xl border border-[#2a3942]">
+            <ul className="text-xs text-slate-600 dark:text-slate-300 space-y-2 bg-slate-50 dark:bg-slate-800 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700">
               <li>
                 • Odadaki kişilerle saygılı iletişim kurun. Rahatsız edici
                 davranışlarda bulunanları mesaj üzerindeki kalkan ikonuna
@@ -2549,11 +2644,11 @@ export default function MitemasukaPage() {
             </ul>
 
             <div className="space-y-2">
-              <h4 className="text-xs font-semibold uppercase text-[#8696a0]">
+              <h4 className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
                 Engellediğiniz Kişiler ({Object.keys(blockedClientIds).length})
               </h4>
               {Object.keys(blockedClientIds).length === 0 ? (
-                <p className="text-xs text-[#8696a0]">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Henüz kimseyi engellemediniz.
                 </p>
               ) : (
@@ -2561,12 +2656,14 @@ export default function MitemasukaPage() {
                   {Object.entries(blockedClientIds).map(([cid, uname]) => (
                     <div
                       key={cid}
-                      className="flex items-center justify-between bg-[#111b21] px-3 py-2 rounded-xl text-xs"
+                      className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-xs"
                     >
-                      <span>{uname}</span>
+                      <span className="font-medium text-slate-800 dark:text-slate-200">
+                        {uname}
+                      </span>
                       <button
                         onClick={() => toggleBlockUser(cid, uname)}
-                        className="text-emerald-400 hover:underline font-medium"
+                        className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
                       >
                         Engeli Kaldır
                       </button>

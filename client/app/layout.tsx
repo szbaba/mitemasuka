@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
     title: 'Mitemasuka',
   },
   icons: {
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#00a884',
+  themeColor: '#1d4ed8',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -50,8 +50,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr">
-      <body className="antialiased selection:bg-[#00a884] selection:text-white">
+    <html lang="tr" suppressHydrationWarning>
+      <body className="antialiased font-sans selection:bg-blue-600 selection:text-white">
         {children}
       </body>
     </html>
