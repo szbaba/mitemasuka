@@ -34,6 +34,7 @@ import {
   Radio,
   Sun,
   Moon,
+  Palette,
 } from 'lucide-react';
 
 interface WsClient {
@@ -145,6 +146,49 @@ const CHANNEL_PLANS = [
 
 const EMOJI_LIST = ['❤️', '😂', '👍', '🔥'];
 const CHANNEL_REACTIONS = ['👏', '🔥', '❤️', '👍'];
+
+const CHAT_BACKGROUNDS = [
+  {
+    id: 'ice',
+    label: 'Buz Mavisi',
+    swatch: '#dde6f0',
+    className: 'bg-[#e3eaf2] dark:bg-[#0b1120]',
+  },
+  {
+    id: 'mist',
+    label: 'Mavi Degrade',
+    swatch: 'linear-gradient(135deg, #dbeafe 0%, #cbd5e1 100%)',
+    className:
+      'bg-gradient-to-b from-[#e2e8f0] via-[#dbeafe]/85 to-[#cbd5e1] dark:from-slate-950 dark:via-blue-950/40 dark:to-slate-900',
+  },
+  {
+    id: 'slate',
+    label: 'Koyu Gümüş',
+    swatch: '#cbd5e1',
+    className: 'bg-[#d4dde8] dark:bg-[#080d18]',
+  },
+  {
+    id: 'dots',
+    label: 'Radar Noktalı',
+    swatch: '#d8e2ed',
+    className:
+      'bg-[#dee6f0] dark:bg-slate-900 bg-[radial-gradient(#94a3b8_1px,transparent_1px)] dark:bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:18px_18px]',
+  },
+  {
+    id: 'sand',
+    label: 'Sıcak Kum',
+    swatch: '#e6e1d6',
+    className: 'bg-[#e7e2d8] dark:bg-[#141413]',
+  },
+  {
+    id: 'mint',
+    label: 'Adaçayı',
+    swatch: '#d6e6df',
+    className: 'bg-[#dcebe4] dark:bg-[#0b1915]',
+  },
+] as const;
+
+type ChatBgId = (typeof CHAT_BACKGROUNDS)[number]['id'];
 
 function getDistanceMeters(
   lat1?: number | null,
@@ -314,6 +358,7 @@ export default function MitemasukaPage() {
 
   // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları + Tema (Corsecure Light/Dark)
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [chatBg, setChatBg] = useState<ChatBgId>('ice');
   const [simOffsetMeters, setSimOffsetMeters] = useState<number>(0);
   const [showSimBar, setShowSimBar] = useState<boolean>(false);
   const [roomNotifEnabled, setRoomNotifEnabled] = useState<boolean>(true);
@@ -354,6 +399,12 @@ export default function MitemasukaPage() {
       localStorage.setItem('mitemasuka_notif_room', String(roomNotifEnabled));
     } catch {}
   }, [roomNotifEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mitemasuka_chat_bg', chatBg);
+    } catch {}
+  }, [chatBg]);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -434,6 +485,13 @@ export default function MitemasukaPage() {
       const savedTheme = localStorage.getItem('mitemasuka_theme');
       if (savedTheme === 'dark') {
         setIsDarkMode(true);
+      }
+      const savedBg = localStorage.getItem('mitemasuka_chat_bg');
+      if (
+        savedBg &&
+        CHAT_BACKGROUNDS.some((b) => b.id === savedBg)
+      ) {
+        setChatBg(savedBg as ChatBgId);
       }
     } catch {}
   }, []);
@@ -1100,7 +1158,7 @@ export default function MitemasukaPage() {
 
       {/* HAMBURGER MENÜ */}
       {showHamburgerMenu && (
-        <div className="absolute top-[60px] right-3 w-72 bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-40 py-2 text-sm divide-y divide-slate-100 dark:divide-slate-700/80">
+        <div className="absolute top-[60px] right-3 w-72 max-h-[82vh] overflow-y-auto bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-40 py-2 text-sm divide-y divide-slate-100 dark:divide-slate-700/80">
           <div className="px-3 py-2 space-y-2">
             {/* Bireysel Plus */}
             <button
@@ -1363,6 +1421,42 @@ export default function MitemasukaPage() {
             </button>
           </div>
 
+          {/* 🎨 SOHBET ZEMİNİ SEÇİCİ (Kalıcı & Genişletilebilir) */}
+          <div className="px-3.5 py-2.5 space-y-2">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <span className="flex items-center gap-2">
+                <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>Sohbet Zemini</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal">
+                {CHAT_BACKGROUNDS.find((b) => b.id === chatBg)?.label}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {CHAT_BACKGROUNDS.map((bgOpt) => {
+                const active = chatBg === bgOpt.id;
+                return (
+                  <button
+                    key={bgOpt.id}
+                    type="button"
+                    onClick={() => setChatBg(bgOpt.id)}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-medium transition ${
+                      active
+                        ? 'border-blue-600 bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                    }`}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-600 shrink-0"
+                      style={{ background: bgOpt.swatch }}
+                    />
+                    <span className="truncate">{bgOpt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="pt-1">
             <button
               onClick={() => {
@@ -1592,7 +1686,10 @@ export default function MitemasukaPage() {
       ) : (
         <main
           onClick={() => showHamburgerMenu && setShowHamburgerMenu(false)}
-          className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 bg-slate-50/70 dark:bg-slate-900 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:3rem_3rem]"
+          className={`flex-1 overflow-y-auto px-4 py-3 space-y-2.5 transition-colors duration-200 ${
+            CHAT_BACKGROUNDS.find((b) => b.id === chatBg)?.className ||
+            CHAT_BACKGROUNDS[0].className
+          }`}
         >
           <div className="flex justify-center my-2">
             <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur border border-slate-200/90 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs">
