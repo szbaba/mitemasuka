@@ -321,6 +321,20 @@ function triggerBrowserNotification(title: string, body: string) {
   } catch {}
 }
 
+const VAPID_PUBLIC_KEY =
+  'BMZfazNz6u-QkK7DBuhuQACka3JeQXUB2yirba0Pk0fgh_UnlqSxi1GqGdsN3HwbEhknQaoaUQG0OJ5lSRHoMMA';
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = typeof window !== 'undefined' ? window.atob(base64) : '';
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export default function MitemasukaPage() {
   const [socket, setSocket] = useState<WsClient | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -346,6 +360,8 @@ export default function MitemasukaPage() {
   const [selectedRadius, setSelectedRadius] = useState<number>(100);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [roomUsers, setRoomUsers] = useState<RoomUser[]>([]);
+  const [nearbyInstalledCount, setNearbyInstalledCount] = useState<number>(1);
+  const [pushSubscribed, setPushSubscribed] = useState<boolean>(false);
   const [showMembersDrawer, setShowMembersDrawer] = useState<boolean>(false);
   const [showRadiusMenu, setShowRadiusMenu] = useState<boolean>(false);
 
@@ -700,7 +716,11 @@ export default function MitemasukaPage() {
               );
             }
           } else if (event === 'room_users') {
-            setRoomUsers(data.users || []);
+            const list = data.users || [];
+            setRoomUsers(list);
+            setNearbyInstalledCount(
+              Math.max(list.length, Number(data.nearbyInstalledCount) || 1)
+            );
           } else if (event === 'nearby_channels') {
             if (Array.isArray(data)) {
               setNearbyChannels(data);
@@ -949,6 +969,62 @@ export default function MitemasukaPage() {
       radius: selectedRadius,
     });
   }, [socket, isConnected, effectiveCoords, selectedRadius]);
+
+  const subscribeToLockScreenPush = useCallback(
+    async (askPermission: boolean) => {
+      if (
+        typeof window === 'undefined' ||
+        !('serviceWorker' in navigator) ||
+        !('PushManager' in window) ||
+        !('Notification' in window)
+      ) {
+        return;
+      }
+
+      try {
+        let perm = Notification.permission;
+        if (perm === 'default' && askPermission) {
+          perm = await Notification.requestPermission();
+        }
+        if (perm !== 'granted') return;
+
+        const reg = await navigator.serviceWorker.ready;
+        if (reg.active && myClientId) {
+          reg.active.postMessage({
+            type: 'SET_CLIENT_META',
+            clientId: myClientId,
+            region: regionKey,
+          });
+        }
+
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          const appServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appServerKey.buffer as ArrayBuffer,
+          });
+        }
+
+        if (sub && socket && isConnected) {
+          socket.emit('register_push', { subscription: sub.toJSON() });
+          setPushSubscribed(true);
+        }
+      } catch {}
+    },
+    [socket, isConnected, myClientId, regionKey]
+  );
+
+  useEffect(() => {
+    if (!socket || !isConnected || !myClientId) return;
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
+      subscribeToLockScreenPush(false);
+    }
+  }, [socket, isConnected, myClientId, subscribeToLockScreenPush]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1402,7 +1478,12 @@ export default function MitemasukaPage() {
                     : 'text-emerald-600 dark:text-emerald-400'
                 }`}
               />
-              <span>{roomUsers.length}</span>
+              <span>
+                {roomUsers.length}
+                <span className="opacity-60 font-normal">
+                  /{Math.max(roomUsers.length, nearbyInstalledCount)}
+                </span>
+              </span>
             </button>
 
             {/* Menzil Seçici Mini Açılır Butonu */}
@@ -2230,19 +2311,39 @@ export default function MitemasukaPage() {
 
           {activeView === 'room' ? (
           <>
-          <div className="flex justify-center my-2">
-            <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs">
-              <span className="text-[#1A81E5] font-semibold">
-                {t.doYouSeeMe}
-              </span>{' '}
-              — {t.roomBannerPrefix}{' '}
-              <strong className="text-slate-900 dark:text-white">
-                {selectedRadius >= 1000
-                  ? `${selectedRadius / 1000} km`
-                  : `${selectedRadius} ${t.meters}`}
-              </strong>{' '}
-              {t.roomBannerSuffix}
+          <div className="flex flex-col items-center gap-1.5 my-2">
+            <div className="bg-white/95 dark:bg-neutral-800/95 backdrop-blur border border-slate-200/90 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 text-xs px-4 py-2.5 rounded-2xl text-center max-w-md shadow-xs space-y-1.5">
+              <div>
+                <span className="text-[#1A81E5] font-semibold">
+                  {t.doYouSeeMe}
+                </span>{' '}
+                — {t.roomBannerPrefix}{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  {selectedRadius >= 1000
+                    ? `${selectedRadius / 1000} km`
+                    : `${selectedRadius} ${t.meters}`}
+                </strong>{' '}
+                {t.roomBannerSuffix}
+              </div>
+              <div className="pt-1 border-t border-slate-100 dark:border-neutral-700/70 text-[11px] font-semibold text-slate-700 dark:text-neutral-200">
+                {t.nearbyInstalledBadge
+                  .replace('{active}', String(roomUsers.length))
+                  .replace(
+                    '{installed}',
+                    String(Math.max(roomUsers.length, nearbyInstalledCount))
+                  )}
+              </div>
             </div>
+
+            {!pushSubscribed && (
+              <button
+                type="button"
+                onClick={() => subscribeToLockScreenPush(true)}
+                className="text-[11px] font-semibold px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1A81E5] dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition shadow-2xs"
+              >
+                {t.enableLockScreenWake}
+              </button>
+            )}
           </div>
 
           {groupedMessages.map((entry) => {

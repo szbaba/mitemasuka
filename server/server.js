@@ -122,9 +122,43 @@ function getOrCreateProfile(clientId) {
     // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
     whisperContacts: new Set(),
     isBanned: false,
+    lastLat: null,
+    lastLng: null,
+    lastRadius: 100,
+    lastSeenAt: Date.now(),
+    pushSub: null,
+    lastPushSentAt: 0,
+    lastPushPayload: null,
   };
   profiles.set(clientId, newProfile);
   return newProfile;
+}
+
+function countNearbyInstalledDevices(lat, lng, radius, minCount = 1) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return minCount;
+  const matchedClientIds = new Set();
+
+  for (const [, u] of users.entries()) {
+    if (
+      u.lat !== null &&
+      u.lng !== null &&
+      calculateDistanceMeters(lat, lng, u.lat, u.lng) <= radius
+    ) {
+      matchedClientIds.add(u.clientId);
+    }
+  }
+
+  for (const [cid, p] of profiles.entries()) {
+    if (
+      typeof p.lastLat === 'number' &&
+      typeof p.lastLng === 'number' &&
+      calculateDistanceMeters(lat, lng, p.lastLat, p.lastLng) <= radius
+    ) {
+      matchedClientIds.add(cid);
+    }
+  }
+
+  return Math.max(minCount, matchedClientIds.size);
 }
 
 /**
@@ -185,10 +219,18 @@ function broadcastRoomUsers(roomId) {
   room.centerLat = avgLat;
   room.centerLng = avgLng;
 
+  const nearbyInstalledCount = countNearbyInstalledDevices(
+    avgLat,
+    avgLng,
+    room.radius,
+    roomMembers.length
+  );
+
   io.to(roomId).emit('room_users', {
     roomId,
     radius: room.radius,
     users: roomMembers,
+    nearbyInstalledCount,
   });
 }
 
@@ -311,6 +353,12 @@ function assignUserToLocationRoom(socket, lat, lng, requestedRadius) {
   user.lat = lat;
   user.lng = lng;
   user.radius = targetRadius;
+
+  const prof = getOrCreateProfile(user.clientId);
+  prof.lastLat = lat;
+  prof.lastLng = lng;
+  prof.lastRadius = targetRadius;
+  prof.lastSeenAt = Date.now();
 
   // Mevcut odada kalmaya devam ediyor mu?
   if (user.roomId && rooms.has(user.roomId)) {

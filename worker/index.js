@@ -10,6 +10,56 @@ const MAX_ROOM_WHISPERS = 100;
 const REPORT_BAN_THRESHOLD = 3;
 // Tanışma dönemi: Tüm kullanıcılar varsayılan olarak Plus başlar (ücretliye geçince false yapılır)
 const DEFAULT_PLUS_ENABLED = true;
+// Çevrimdışı yakın kullanıcılara kilit ekranı uyandırma bildirimi bekleme süresi (60 sn)
+const WAKE_PUSH_COOLDOWN_MS = 60 * 1000;
+// Çevrede uygulama yüklü sayımı için maksimum son görülme süresi (30 gün)
+const KNOWN_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+const VAPID_PUBLIC_KEY =
+  'BMZfazNz6u-QkK7DBuhuQACka3JeQXUB2yirba0Pk0fgh_UnlqSxi1GqGdsN3HwbEhknQaoaUQG0OJ5lSRHoMMA';
+const VAPID_PRIVATE_JWK = {
+  kty: 'EC',
+  x: 'xl9rM3Pq75CQrsMG6G5AAKRrcl5BdQHbKKttrQ-TR-A',
+  y: 'h_UnlqSxi1GqGdsN3HwbEhknQaoaUQG0OJ5lSRHoMMA',
+  crv: 'P-256',
+  d: 'QAaWoV1GPQa-mINW4c5q_2PsSiSO9gbQGSxH49rPppI',
+};
+
+function strToB64Url(str) {
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function bufToB64Url(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return strToB64Url(bin);
+}
+
+async function createVapidAuthHeader(endpoint) {
+  const url = new URL(endpoint);
+  const aud = `${url.protocol}//${url.host}`;
+  const exp = Math.floor(Date.now() / 1000) + 12 * 3600;
+  const header = strToB64Url(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const payload = strToB64Url(
+    JSON.stringify({ aud, exp, sub: 'mailto:suleymanbaba@gmail.com' })
+  );
+  const unsignedToken = `${header}.${payload}`;
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    VAPID_PRIVATE_JWK,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: { name: 'SHA-256' } },
+    key,
+    new TextEncoder().encode(unsignedToken)
+  );
+  const jwt = `${unsignedToken}.${bufToB64Url(sig)}`;
+  return `vapid t=${jwt}, k=${VAPID_PUBLIC_KEY}`;
+}
 
 const USER_COLORS = [
   '#34D399', // Emerald
@@ -48,23 +98,160 @@ export class MitemasukaHub {
     this.users = new Map();
     this.profiles = new Map();
     this.rooms = new Map();
-    /**
-     * Tek Yönlü Megafon / Anons Kanalları
-     * channelId -> {
-     *   id: string,
-     *   title: string,
-     *   ownerClientId: string,
-     *   ownerName: string,
-     *   lat: number,
-     *   lng: number,
-     *   radius: number (500 | 1000 | 5000),
-     *   plan: string,
-     *   messages: Array<{ id, text, isLiveVoice, timestamp }>,
-     *   reactions: { '👏': number, '🔥': number, '❤️': number, '👍': number },
-     *   createdAt: number
-     * }
-     */
     this.channels = new Map();
+
+    // Kalıcı cihaz konumlarını ve Web Push aboneliklerini yükle
+    this.state.blockConcurrencyWhile(async () => {
+      try {
+        const saved = await this.state.storage.get('known_devices_v1');
+        if (saved && typeof saved === 'object') {
+          const today = getTodayKey();
+          for (const [cid, item] of Object.entries(saved)) {
+            if (!item || typeof item !== 'object') continue;
+            this.profiles.set(cid, {
+              clientId: cid,
+              username: item.username || `User_${Math.floor(100 + Math.random() * 900)}`,
+              color:
+                item.color ||
+                USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)],
+              isPlus: DEFAULT_PLUS_ENABLED ? true : Boolean(item.isPlus),
+              plusPlan: DEFAULT_PLUS_ENABLED ? 'promo' : item.plusPlan || null,
+              ghostMode: Boolean(item.ghostMode),
+              dailyCount: 0,
+              quotaDay: today,
+              reportedBy: new Set(),
+              whisperContacts: new Set(),
+              isBanned: Boolean(item.isBanned),
+              lastLat: typeof item.lastLat === 'number' ? item.lastLat : null,
+              lastLng: typeof item.lastLng === 'number' ? item.lastLng : null,
+              lastRadius: item.lastRadius || 100,
+              lastSeenAt: item.lastSeenAt || 0,
+              pushSub: item.pushSub || null,
+              lastPushSentAt: item.lastPushSentAt || 0,
+              lastPushPayload: item.lastPushPayload || null,
+            });
+          }
+        }
+      } catch {}
+    });
+  }
+
+  persistKnownDevices() {
+    try {
+      const now = Date.now();
+      const serializable = {};
+      for (const [cid, p] of this.profiles.entries()) {
+        if (
+          p.lastLat !== null &&
+          p.lastLng !== null &&
+          now - (p.lastSeenAt || 0) <= KNOWN_DEVICE_TTL_MS
+        ) {
+          serializable[cid] = {
+            username: p.username,
+            color: p.color,
+            isPlus: p.isPlus,
+            plusPlan: p.plusPlan,
+            ghostMode: p.ghostMode,
+            isBanned: p.isBanned,
+            lastLat: p.lastLat,
+            lastLng: p.lastLng,
+            lastRadius: p.lastRadius || 100,
+            lastSeenAt: p.lastSeenAt || now,
+            pushSub: p.pushSub || null,
+            lastPushSentAt: p.lastPushSentAt || 0,
+            lastPushPayload: p.lastPushPayload || null,
+          };
+        }
+      }
+      this.state.storage.put('known_devices_v1', serializable).catch(() => {});
+    } catch {}
+  }
+
+  isClientOnlineAnywhere(clientId) {
+    for (const [, u] of this.users.entries()) {
+      if (u.clientId === clientId && u.lat !== null && u.lng !== null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  countNearbyInstalledDevices(lat, lng, radius, minCount = 1) {
+    if (typeof lat !== 'number' || typeof lng !== 'number') return minCount;
+    const now = Date.now();
+    const matchedClientIds = new Set();
+
+    for (const [, u] of this.users.entries()) {
+      if (
+        u.lat !== null &&
+        u.lng !== null &&
+        calculateDistanceMeters(lat, lng, u.lat, u.lng) <= radius
+      ) {
+        matchedClientIds.add(u.clientId);
+      }
+    }
+
+    for (const [cid, p] of this.profiles.entries()) {
+      if (
+        typeof p.lastLat === 'number' &&
+        typeof p.lastLng === 'number' &&
+        now - (p.lastSeenAt || 0) <= KNOWN_DEVICE_TTL_MS &&
+        calculateDistanceMeters(lat, lng, p.lastLat, p.lastLng) <= radius
+      ) {
+        matchedClientIds.add(cid);
+      }
+    }
+
+    return Math.max(minCount, matchedClientIds.size);
+  }
+
+  async notifyOfflineNearbyUsers(enteringUser, lat, lng) {
+    if (!enteringUser || enteringUser.ghostMode) return;
+    const now = Date.now();
+
+    for (const [cid, prof] of this.profiles.entries()) {
+      if (cid === enteringUser.clientId) continue;
+      if (!prof.pushSub || !prof.pushSub.endpoint) continue;
+      if (typeof prof.lastLat !== 'number' || typeof prof.lastLng !== 'number') {
+        continue;
+      }
+      if (this.isClientOnlineAnywhere(cid)) continue;
+
+      const dist = calculateDistanceMeters(
+        lat,
+        lng,
+        prof.lastLat,
+        prof.lastLng
+      );
+      const wakeRadius = Math.max(100, Number(prof.lastRadius) || 100);
+      if (dist > wakeRadius) continue;
+
+      if (now - (prof.lastPushSentAt || 0) < WAKE_PUSH_COOLDOWN_MS) continue;
+
+      prof.lastPushSentAt = now;
+      prof.lastPushPayload = {
+        title: '👋 Mitemasuka — Beni Görüyor Musun?',
+        body: `${Math.round(dist)}m yakınında ${enteringUser.username} uygulamayı açtı! Odaya bağlanmak için dokun.`,
+        timestamp: now,
+      };
+
+      try {
+        const authHeader = await createVapidAuthHeader(prof.pushSub.endpoint);
+        const res = await fetch(prof.pushSub.endpoint, {
+          method: 'POST',
+          headers: {
+            TTL: '3600',
+            Urgency: 'high',
+            'Content-Length': '0',
+            Authorization: authHeader,
+          },
+        });
+        if (res.status === 404 || res.status === 410) {
+          prof.pushSub = null;
+        }
+      } catch {}
+    }
+    this.persistKnownDevices();
   }
 
   sendEvent(ws, event, data) {
@@ -232,6 +419,13 @@ export class MitemasukaHub {
       // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
       whisperContacts: new Set(),
       isBanned: false,
+      lastLat: null,
+      lastLng: null,
+      lastRadius: 100,
+      lastSeenAt: Date.now(),
+      pushSub: null,
+      lastPushSentAt: 0,
+      lastPushPayload: null,
     };
     this.profiles.set(clientId, newProfile);
     return newProfile;
@@ -289,10 +483,18 @@ export class MitemasukaHub {
     room.centerLat = avgLat;
     room.centerLng = avgLng;
 
+    const nearbyInstalledCount = this.countNearbyInstalledDevices(
+      avgLat,
+      avgLng,
+      room.radius,
+      roomMembers.length
+    );
+
     this.broadcastToRoom(roomId, 'room_users', {
       roomId,
       radius: room.radius,
       users: roomMembers,
+      nearbyInstalledCount,
     });
   }
 
@@ -314,9 +516,23 @@ export class MitemasukaHub {
       });
     }
 
+    const wasInRoom = Boolean(user.roomId);
     user.lat = lat;
     user.lng = lng;
     user.radius = targetRadius;
+
+    // Kullanıcının son bilinen konumunu güncelle ve kaydet
+    const prof = this.getOrCreateProfile(user.clientId);
+    prof.lastLat = lat;
+    prof.lastLng = lng;
+    prof.lastRadius = targetRadius;
+    prof.lastSeenAt = Date.now();
+    this.persistKnownDevices();
+
+    // Kullanıcı ilk kez konuma bağlandığında 100m çevredeki kapalı cihazlara Web Push gönder
+    if (!wasInRoom && !user.ghostMode) {
+      this.notifyOfflineNearbyUsers(user, lat, lng);
+    }
 
     // Kullanıcının yakınındaki Tek Yönlü Kanalları da gönder
     this.sendNearbyChannelsToUser(user);
@@ -450,6 +666,20 @@ export class MitemasukaHub {
         return;
       }
       this.assignUserToLocationRoom(user, data.lat, data.lng, data.radius || 100);
+      return;
+    }
+
+    // 🔔 KİLİT EKRANI WEB PUSH ABONELİĞİ KAYDETME
+    if (event === 'register_push') {
+      const sub = data?.subscription;
+      if (!sub || typeof sub.endpoint !== 'string') return;
+      const prof = this.getOrCreateProfile(user.clientId);
+      prof.pushSub = {
+        endpoint: sub.endpoint,
+        keys: sub.keys || null,
+      };
+      prof.lastSeenAt = Date.now();
+      this.persistKnownDevices();
       return;
     }
 
@@ -1027,6 +1257,23 @@ export class MitemasukaHub {
 
   async fetch(request) {
     const url = new URL(request.url);
+
+    // Service Worker kilit ekranı bildirimi uyandığında son bildirim metnini çeker
+    if (url.pathname === '/push-info') {
+      const cid = url.searchParams.get('clientId') || '';
+      const prof = cid ? this.profiles.get(cid) : null;
+      const payload = prof?.lastPushPayload || {
+        title: '👋 Mitemasuka — Beni Görüyor Musun?',
+        body: '100m yakınında biri uygulamayı açtı! Odaya bağlanmak için dokun.',
+      };
+      return new Response(JSON.stringify(payload), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
 
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response(
