@@ -709,6 +709,20 @@ export default function MitemasukaPage() {
             if (typeof data.remainingQuota === 'number')
               setRemainingQuota(data.remainingQuota);
             setIsBanned(Boolean(data.isBanned));
+            try {
+              const savedBlocked = JSON.parse(
+                localStorage.getItem('mitemasuka_blocked') || '{}'
+              );
+              const blockedKeys = Object.keys(savedBlocked || {});
+              if (blockedKeys.length > 0 && ws.readyState === WebSocket.OPEN) {
+                ws.send(
+                  JSON.stringify({
+                    event: 'sync_blocked',
+                    data: { blockedClientIds: blockedKeys },
+                  })
+                );
+              }
+            } catch {}
           } else if (event === 'joined_room') {
             setRoomId(data.roomId);
             setSelectedRadius(data.radius);
@@ -1185,6 +1199,7 @@ export default function MitemasukaPage() {
   // Özel konuşma başlat / aç. Aynı anda sadece 1 kişiyle özel konuşma yapılabilir.
   const openDm = (peerClientId?: string, peerName?: string) => {
     if (!peerClientId || !peerName || peerClientId === myClientId) return;
+    if (blockedClientIds[peerClientId]) return;
 
     if (dmSession) {
       const currentPeerId =
@@ -1480,6 +1495,27 @@ export default function MitemasukaPage() {
 
   const toggleBlockUser = (targetClientId: string, targetName: string) => {
     if (!targetClientId || targetClientId === myClientId) return;
+    const wasBlocked = Boolean(blockedClientIds[targetClientId]);
+    if (socket) {
+      socket.emit(wasBlocked ? 'unblock_user' : 'block_user', {
+        targetClientId,
+      });
+    }
+    if (!wasBlocked) {
+      if (dmDraftPeer?.clientId === targetClientId) {
+        setDmDraftPeer(null);
+      }
+      if (
+        dmSession &&
+        (dmSession.initiatorClientId === targetClientId ||
+          dmSession.recipientClientId === targetClientId)
+      ) {
+        handleCloseDm();
+      }
+      if (activeChannel?.ownerClientId === targetClientId) {
+        setActiveChannelId(null);
+      }
+    }
     setBlockedClientIds((prev) => {
       const updated = { ...prev };
       if (updated[targetClientId]) {
@@ -1701,9 +1737,11 @@ export default function MitemasukaPage() {
       </header>
 
       {/* 🔴 YAKINDAKİ TEK YÖNLÜ CANLI ANONS KANALLARI BANDI (Konser / Miting / Konferans) */}
-      {nearbyChannels.length > 0 && (
+      {nearbyChannels.filter((ch) => !blockedClientIds[ch.ownerClientId]).length > 0 && (
         <div className="bg-rose-50/95 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-800/60 px-3.5 py-2 shrink-0 space-y-1.5">
-          {nearbyChannels.map((ch) => {
+          {nearbyChannels
+            .filter((ch) => !blockedClientIds[ch.ownerClientId])
+            .map((ch) => {
             const lastMsg =
               ch.messages[ch.messages.length - 1]?.text || 'Canlı yayın aktif';
             return (

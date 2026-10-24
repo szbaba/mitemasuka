@@ -260,6 +260,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   final Map<String, String> _translations = {};
   final Set<String> _translatingIds = {};
   Set<String> _blockedClientIds = {};
+  Map<String, String> _blockedNames = {};
   final Set<String> _expandedSystemGroups = {};
   final Map<String, String> _typingUsers = {};
   final Map<String, Timer> _remoteTypingTimers = {};
@@ -268,6 +269,68 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   Map<String, dynamic>? _activeChannel;
 
   String _t(String key) => trText(_uiLang, key);
+
+  Future<void> _toggleBlockUser(
+    String targetClientId,
+    String targetName, {
+    bool forceBlock = false,
+  }) async {
+    if (targetClientId.isEmpty || targetClientId == _myClientId) return;
+    final wasBlocked = _blockedClientIds.contains(targetClientId);
+    final shouldBlock = forceBlock ? true : !wasBlocked;
+
+    setState(() {
+      if (shouldBlock) {
+        _blockedClientIds.add(targetClientId);
+        if (targetName.isNotEmpty) {
+          _blockedNames[targetClientId] = targetName;
+        }
+        if (_dmDraftPeer?.clientId == targetClientId) {
+          _dmDraftPeer = null;
+          if (_activeView == 'dm' && _dmSession == null) {
+            _activeView = 'room';
+          }
+        }
+        if (_dmSession != null) {
+          final a =
+              (_dmSession!['initiatorClientId'] ?? _dmSession!['aClientId'])
+                  ?.toString();
+          final b =
+              (_dmSession!['recipientClientId'] ?? _dmSession!['bClientId'])
+                  ?.toString();
+          if (a == targetClientId || b == targetClientId) {
+            _dmSession = null;
+            _whispers = [];
+            _unreadDmCount = 0;
+            if (_activeView == 'dm') {
+              _activeView = 'room';
+            }
+          }
+        }
+        if (_activeChannel != null &&
+            _activeChannel!['ownerClientId']?.toString() == targetClientId) {
+          _activeChannel = null;
+        }
+      } else {
+        _blockedClientIds.remove(targetClientId);
+        _blockedNames.remove(targetClientId);
+      }
+    });
+
+    _emit(shouldBlock ? 'block_user' : 'unblock_user', {
+      'targetClientId': targetClientId,
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      'mitemasuka_blocked',
+      _blockedClientIds.toList(),
+    );
+    await prefs.setString(
+      'mitemasuka_blocked_names',
+      jsonEncode(_blockedNames),
+    );
+  }
 
   void _playNotifSound() {
     HapticFeedback.lightImpact();
@@ -317,6 +380,16 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       await prefs.setString('mitemasuka_client_id', cid);
     }
     final blocked = prefs.getStringList('mitemasuka_blocked') ?? [];
+    final blockedNamesRaw = prefs.getString('mitemasuka_blocked_names') ?? '{}';
+    final Map<String, String> loadedBlockedNames = {};
+    try {
+      final decodedMap = jsonDecode(blockedNamesRaw);
+      if (decodedMap is Map) {
+        decodedMap.forEach((k, v) {
+          loadedBlockedNames[k.toString()] = v.toString();
+        });
+      }
+    } catch (_) {}
     final eula = prefs.getBool('mitemasuka_eula_v1') ?? false;
     final savedLang = prefs.getString('mitemasuka_lang') ?? 'tr';
     final savedBg = prefs.getString('mitemasuka_chat_bg') ?? 'ice';
@@ -327,6 +400,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     setState(() {
       _myClientId = cid;
       _blockedClientIds = blocked.toSet();
+      _blockedNames = loadedBlockedNames;
       _uiLang = savedLang;
       _chatBg = savedBg;
       _roomNotifEnabled = savedRoomNotif;
@@ -536,6 +610,11 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             _remainingQuota = (data['remainingQuota'] as num).toInt();
           }
         });
+        if (_blockedClientIds.isNotEmpty) {
+          _emit('sync_blocked', {
+            'blockedClientIds': _blockedClientIds.toList(),
+          });
+        }
         _joinRoomIfReady();
       } else if (event == 'joined_room' && data is Map<String, dynamic>) {
         final history = (data['history'] is List) ? data['history'] as List : [];
@@ -1515,13 +1594,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               final messenger = ScaffoldMessenger.of(context);
               final msgText = _t('reportSuccessText');
               _emit('report_user', {'targetClientId': targetClientId});
-              setState(() {
-                _blockedClientIds.add(targetClientId);
-              });
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setStringList(
-                'mitemasuka_blocked',
-                _blockedClientIds.toList(),
+              await _toggleBlockUser(
+                targetClientId,
+                targetName,
+                forceBlock: true,
               );
               nav.pop();
               messenger.showSnackBar(SnackBar(content: Text(msgText)));
@@ -1848,7 +1924,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             .toList();
                         final displayName = matchedUser.isNotEmpty
                             ? matchedUser.first.username
-                            : cid;
+                            : (_blockedNames[cid] ?? cid);
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
@@ -1866,16 +1942,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  setState(() {
-                                    _blockedClientIds.remove(cid);
-                                  });
+                                  await _toggleBlockUser(cid, displayName);
                                   setModalState(() {});
-                                  final prefs =
-                                      await SharedPreferences.getInstance();
-                                  await prefs.setStringList(
-                                    'mitemasuka_blocked',
-                                    _blockedClientIds.toList(),
-                                  );
                                 },
                                 child: Text(
                                   _t('unblockBtn'),
@@ -2615,8 +2683,15 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   ),
                 ),
 
-                if (_nearbyChannels.isNotEmpty)
-                  ..._nearbyChannels.take(1).map((ch) {
+                if (_nearbyChannels
+                    .where((ch) =>
+                        !_blockedClientIds.contains(ch['ownerClientId']?.toString()))
+                    .isNotEmpty)
+                  ..._nearbyChannels
+                      .where((ch) =>
+                          !_blockedClientIds.contains(ch['ownerClientId']?.toString()))
+                      .take(1)
+                      .map((ch) {
                     return GestureDetector(
                       onTap: () => _showLiveChannelDialog(ch),
                       child: Container(
@@ -3592,11 +3667,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             itemBuilder: (ctx, i) {
                               final u = _roomUsers[i];
                               final isMe = u.clientId == _myClientId;
+                              final isBlocked = _blockedClientIds.contains(u.clientId);
                               final d = _distanceFromMe(u.lat, u.lng);
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
-                                onTap: isMe
+                                onTap: (isMe || isBlocked)
                                     ? null
                                     : () {
                                         setState(() {
@@ -3610,18 +3686,52 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
-                                    color: _parseHexColor(u.color),
+                                    decoration: isBlocked
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                    color: isBlocked
+                                        ? textSecondary
+                                        : _parseHexColor(u.color),
                                   ),
                                 ),
-                                trailing: d != null
-                                    ? Text(
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (d != null && !isMe)
+                                      Text(
                                         '${d}m',
                                         style: TextStyle(
                                           fontSize: 11.5,
                                           color: textSecondary,
                                         ),
-                                      )
-                                    : null,
+                                      ),
+                                    if (!isMe) ...[
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () => _toggleBlockUser(
+                                          u.clientId,
+                                          u.username,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: isBlocked
+                                                ? kCrimsonRed.withValues(alpha: 0.14)
+                                                : pillBg,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Icon(
+                                            CupertinoIcons.nosign,
+                                            size: 14,
+                                            color: isBlocked
+                                                ? kCrimsonRed
+                                                : textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               );
                             },
                           ),

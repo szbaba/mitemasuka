@@ -424,6 +424,7 @@ export class MitemasukaHub {
     const today = getTodayKey();
     if (this.profiles.has(clientId)) {
       const prof = this.profiles.get(clientId);
+      if (!prof.blockedClients) prof.blockedClients = new Set();
       if (prof.quotaDay !== today) {
         prof.quotaDay = today;
         prof.dailyCount = 0;
@@ -449,6 +450,7 @@ export class MitemasukaHub {
       dailyCount: 0,
       quotaDay: today,
       reportedBy: new Set(),
+      blockedClients: new Set(),
       // Bu kullanıcıya özel mesaj (fısıltı) atmış kişiler: Plus olmasa da cevap verebilir
       whisperContacts: new Set(),
       isBanned: false,
@@ -1072,6 +1074,20 @@ export class MitemasukaHub {
         whisperToId = whisperTargets[0].id;
         whisperToName = whisperTargets[0].username;
 
+        // Engelleme kontrolü (Gönderen veya Alıcı birbirini engellemişse 1-1 DM kurulamaz)
+        const targetProf = this.getOrCreateProfile(whisperToClientId);
+        if (
+          prof.blockedClients.has(whisperToClientId) ||
+          targetProf.blockedClients.has(user.clientId)
+        ) {
+          this.sendEvent(user.ws, 'dm_error', {
+            reason: 'target_busy',
+            peerClientId: whisperToClientId,
+            peerName: whisperToName,
+          });
+          return;
+        }
+
         // Tek-eşli (1'e 1) özel görüşme ve Kabul/Red kontrolü
         dmSession = this.getUserDmSession(roomObj, user.clientId);
         if (dmSession) {
@@ -1281,6 +1297,67 @@ export class MitemasukaHub {
         }
       } else {
         this.broadcastToRoom(user.roomId, 'message_reaction', reactionPayload);
+      }
+      return;
+    }
+
+    if (event === 'block_user') {
+      const targetId = String(data?.targetClientId || '');
+      if (!targetId || targetId === user.clientId) return;
+      const prof = this.getOrCreateProfile(user.clientId);
+      prof.blockedClients.add(targetId);
+
+      // Eğer engellenen kişiyle açık bir 1-1 DM oturumu varsa anında kapat
+      if (user.roomId) {
+        const roomObj = this.rooms.get(user.roomId);
+        if (roomObj && roomObj.dmSessions) {
+          const session = this.getUserDmSession(roomObj, user.clientId);
+          if (
+            session &&
+            (session.initiatorClientId === targetId ||
+              session.recipientClientId === targetId)
+          ) {
+            roomObj.dmSessions = roomObj.dmSessions.filter(
+              (s) => s.id !== session.id
+            );
+            this.emitToClientsInRoom(
+              user.roomId,
+              [user.clientId, targetId],
+              'dm_state',
+              {
+                session: null,
+                notice: {
+                  type: 'closed',
+                  byClientId: user.clientId,
+                  byName: user.username,
+                },
+              }
+            );
+          }
+        }
+      }
+      return;
+    }
+
+    if (event === 'unblock_user') {
+      const targetId = String(data?.targetClientId || '');
+      if (!targetId) return;
+      const prof = this.getOrCreateProfile(user.clientId);
+      prof.blockedClients.delete(targetId);
+      return;
+    }
+
+    if (event === 'sync_blocked') {
+      const list = Array.isArray(data?.blockedClientIds)
+        ? data.blockedClientIds
+        : [];
+      const prof = this.getOrCreateProfile(user.clientId);
+      prof.blockedClients.clear();
+      for (const cid of list) {
+        const clean = String(cid || '').trim();
+        if (clean && clean !== user.clientId) {
+          prof.blockedClients.add(clean);
+        }
       }
       return;
     }
