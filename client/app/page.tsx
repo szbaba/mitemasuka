@@ -448,6 +448,10 @@ export default function MitemasukaPage() {
     done?: boolean;
   } | null>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(
+    null
+  );
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const channelEndRef = useRef<HTMLDivElement | null>(null);
@@ -1271,6 +1275,21 @@ export default function MitemasukaPage() {
       setTranslations((prev) => ({ ...prev, [key]: res.translated }));
       setHiddenTranslationIds((prev) => ({ ...prev, [key]: false }));
     }
+  };
+
+  const handleReactMessage = (messageId: string, emoji: string) => {
+    if (!socket) return;
+    socket.emit('react_message', { messageId, emoji });
+    setActiveActionMenuId(null);
+  };
+
+  const handleCopyMessageText = (msgId: string, text: string) => {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedMsgId(msgId);
+      setTimeout(() => setCopiedMsgId(null), 1500);
+    } catch {}
+    setActiveActionMenuId(null);
   };
 
   const handleSelectRadius = (opt: {
@@ -2531,169 +2550,343 @@ export default function MitemasukaPage() {
               item.text.trim().length <= 8;
             const hasLetters = new RegExp('\\p{L}', 'u').test(item.text);
 
+            const activeReactions = Object.entries(item.reactions || {}).filter(
+              ([, users]) => Array.isArray(users) && users.length > 0
+            );
+            const isMenuOpen = activeActionMenuId === item.id;
+
             return (
               <div
                 key={item.id}
-                className={`group flex flex-col ${
+                className={`group relative flex flex-col ${
                   isMine ? 'items-end' : 'items-start'
                 }`}
               >
                 <div
-                  className={`relative max-w-[90%] sm:max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm transition-colors ${
-                    isWhisper
-                      ? 'bg-violet-50 dark:bg-violet-950/90 border border-violet-200 dark:border-violet-500/50 text-violet-950 dark:text-violet-100'
-                      : isMine
-                      ? 'bg-[#1A81E5] text-white rounded-tr-xs shadow-[#1A81E5]/20'
-                      : 'bg-white dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 rounded-tl-xs border border-slate-200/90 dark:border-neutral-700'
+                  className={`flex items-center gap-2 max-w-full ${
+                    isMine ? 'flex-row-reverse' : 'flex-row'
                   }`}
                 >
-                  {isWhisper && (
-                    <div className="flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 mb-1 pb-1 border-b border-violet-200 dark:border-violet-500/30">
-                      <MessageSquareLock className="w-3 h-3" />
-                      <span>
-                        {t.privateWhisper}{' '}
-                        {isMine
-                          ? `${t.youTo} ${item.whisperToName}`
-                          : `${item.senderName} ${t.toYou}`}
+                  <div
+                    className={`relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-2.5 shadow-sm transition-colors ${
+                      isWhisper
+                        ? 'bg-violet-50 dark:bg-violet-950/90 border border-violet-200 dark:border-violet-500/50 text-violet-950 dark:text-violet-100'
+                        : isMine
+                        ? 'bg-[#1A81E5] text-white rounded-tr-xs shadow-[#1A81E5]/20'
+                        : 'bg-white dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 rounded-tl-xs border border-slate-200/90 dark:border-neutral-700'
+                    }`}
+                  >
+                    {isWhisper && (
+                      <div className="flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 mb-1 pb-1 border-b border-violet-200 dark:border-violet-500/30">
+                        <MessageSquareLock className="w-3 h-3" />
+                        <span>
+                          {t.privateWhisper}{' '}
+                          {isMine
+                            ? `${t.youTo} ${item.whisperToName}`
+                            : `${item.senderName} ${t.toYou}`}
+                        </span>
+                      </div>
+                    )}
+
+                    {!isMine && (
+                      <div className="flex items-center justify-between gap-3 mb-0.5">
+                        <button
+                          onClick={() => {
+                            openDm(item.senderClientId, item.senderName);
+                          }}
+                          className="text-sm font-bold hover:underline flex items-center gap-1"
+                          style={{ color: item.senderColor || '#2563EB' }}
+                        >
+                          <span>{item.senderName}</span>
+                        </button>
+
+                        <div className="flex items-center gap-1.5">
+                          {distanceFromMe !== null && (
+                            <span className="text-[11px] text-slate-500 dark:text-neutral-400 bg-slate-100 dark:bg-neutral-900/60 px-1.5 py-0.5 rounded font-medium">
+                              {distanceFromMe}m
+                            </span>
+                          )}
+                          {item.senderClientId && (
+                            <button
+                              onClick={() =>
+                                handleReportUser(
+                                  item.senderClientId!,
+                                  item.senderName || 'Kullanıcı'
+                                )
+                              }
+                              title="Kötü Amaçlı Bildir"
+                              className="opacity-60 hover:opacity-100 text-rose-500 dark:text-rose-400"
+                            >
+                              <ShieldAlert className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {item.replyTo && (
+                      <div
+                        className={`mb-1.5 px-2.5 py-1.5 rounded-lg border-l-2 text-xs ${
+                          isMine
+                            ? 'bg-black/15 border-white/80 text-white/95'
+                            : 'bg-slate-100 dark:bg-neutral-900/60 border-[#1A81E5]'
+                        }`}
+                      >
+                        <div
+                          className={`font-semibold ${
+                            isMine
+                              ? 'text-white'
+                              : 'text-blue-700 dark:text-blue-400'
+                          }`}
+                        >
+                          {item.replyTo.senderName}
+                        </div>
+                        <div
+                          className={`truncate ${
+                            isMine
+                              ? 'text-blue-100'
+                              : 'text-slate-500 dark:text-neutral-400'
+                          }`}
+                        >
+                          {item.replyTo.text}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-end justify-between gap-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={
+                            isEmojiOnly
+                              ? 'text-2xl leading-none py-0.5'
+                              : 'text-[18px] font-medium whitespace-pre-wrap break-words leading-snug'
+                          }
+                        >
+                          {item.text}
+                        </p>
+                        {!isMine &&
+                          translations[`${item.id}_${uiLang}`] &&
+                          !hiddenTranslationIds[`${item.id}_${uiLang}`] && (
+                            <p className="mt-1.5 pt-1 border-t border-slate-200/70 dark:border-neutral-700/70 text-[15px] font-medium text-[#1A81E5] dark:text-blue-300 whitespace-pre-wrap break-words flex items-start gap-1">
+                              <Globe className="w-3.5 h-3.5 shrink-0 translate-y-1 opacity-80" />
+                              <span>{translations[`${item.id}_${uiLang}`]}</span>
+                            </p>
+                          )}
+                      </div>
+                      <span
+                        className={`text-[11px] shrink-0 select-none translate-y-0.5 ${
+                          isMine
+                            ? 'text-blue-100/90'
+                            : 'text-slate-400 dark:text-neutral-400'
+                        }`}
+                      >
+                        {formatTime(item.timestamp)}
                       </span>
                     </div>
-                  )}
 
-                  {!isMine && (
-                    <div className="flex items-center justify-between gap-3 mb-0.5">
-                      <button
-                        onClick={() => {
-                          openDm(item.senderClientId, item.senderName);
-                        }}
-                        className="text-sm font-bold hover:underline flex items-center gap-1"
-                        style={{ color: item.senderColor || '#2563EB' }}
-                      >
-                        <span>{item.senderName}</span>
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        {distanceFromMe !== null && (
-                          <span className="text-[11px] text-slate-500 dark:text-neutral-400 bg-slate-100 dark:bg-neutral-900/60 px-1.5 py-0.5 rounded font-medium">
-                            {distanceFromMe}m
-                          </span>
-                        )}
-                        {item.senderClientId && (
+                    {!isMine && (
+                      <div className="mt-1.5 pt-1 border-t border-slate-100 dark:border-white/5 flex items-center justify-end gap-3 opacity-85 group-hover:opacity-100 transition">
+                        {hasLetters && (
                           <button
+                            type="button"
                             onClick={() =>
+                              handleToggleOrTranslateMessage(item.id, item.text)
+                            }
+                            className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
+                          >
+                            <Globe className="w-3 h-3" />
+                            <span>
+                              {translations[`${item.id}_${uiLang}`] &&
+                              !hiddenTranslationIds[`${item.id}_${uiLang}`]
+                                ? t.original
+                                : t.translate}
+                            </span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReplyingTo({
+                              id: item.id,
+                              senderName: item.senderName || 'Kullanıcı',
+                              text: item.text,
+                            });
+                            messageInputRef.current?.focus();
+                            setTimeout(() => messageInputRef.current?.focus(), 20);
+                          }}
+                          className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-blue-600 dark:hover:text-white"
+                        >
+                          <Reply className="w-3 h-3" />
+                          <span>{t.reply}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* WhatsApp Tarzı Bağımsız Yan Nokta Butonu */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveActionMenuId((prev) =>
+                        prev === item.id ? null : item.id
+                      );
+                    }}
+                    title="İfade Bırak ve İşlemler"
+                    className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center border transition select-none ${
+                      isMenuOpen
+                        ? 'bg-[#1A81E5] text-white border-[#1A81E5] shadow-md scale-105'
+                        : 'bg-slate-200/80 dark:bg-neutral-800/90 text-slate-500 dark:text-neutral-400 border-slate-300/70 dark:border-neutral-700 hover:bg-slate-300/80 dark:hover:bg-neutral-700'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-current" />
+                  </button>
+                </div>
+
+                {/* Mesaj Altı Emoji Tepki Rozetleri */}
+                {activeReactions.length > 0 && (
+                  <div
+                    className={`flex flex-wrap items-center gap-1 mt-1 ${
+                      isMine ? 'justify-end pr-9' : 'justify-start pl-1'
+                    }`}
+                  >
+                    {activeReactions.map(([emoji, users]) => {
+                      const iReacted = users.includes(myUsername);
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => handleReactMessage(item.id, emoji)}
+                          title={users.join(', ')}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border shadow-2xs transition ${
+                            iReacted
+                              ? 'bg-blue-50 dark:bg-blue-950/80 border-[#1A81E5] text-[#1A81E5] dark:text-blue-300'
+                              : 'bg-white dark:bg-neutral-800 border-slate-200 dark:border-neutral-700 text-slate-700 dark:text-neutral-200'
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          <span className="text-[11px]">{users.length}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* WhatsApp Tarzı Açılır Emoji + 5'li İşlem Menüsü */}
+                {isMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setActiveActionMenuId(null)}
+                    />
+                    <div
+                      className={`relative z-50 mt-1.5 flex flex-col gap-1.5 ${
+                        isMine ? 'items-end' : 'items-start'
+                      }`}
+                    >
+                      {/* Üst: 6'lı Hızlı Emoji Barı */}
+                      <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-neutral-900/95 dark:bg-neutral-800/95 text-white shadow-xl border border-white/10 backdrop-blur-md">
+                        {['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) => {
+                          const myReact = (item.reactions?.[emo] || []).includes(
+                            myUsername
+                          );
+                          return (
+                            <button
+                              key={emo}
+                              type="button"
+                              onClick={() => handleReactMessage(item.id, emo)}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-lg hover:scale-125 transition-transform ${
+                                myReact ? 'bg-white/20 ring-1 ring-white/40' : ''
+                              }`}
+                            >
+                              {emo}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Alt: 5'li İşlem Listesi */}
+                      <div className="w-56 rounded-2xl bg-neutral-900/95 dark:bg-neutral-800/95 text-white shadow-2xl border border-white/10 backdrop-blur-md py-1.5 overflow-hidden text-xs font-medium">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReplyingTo({
+                              id: item.id,
+                              senderName: item.senderName || 'Kullanıcı',
+                              text: item.text,
+                            });
+                            setActiveActionMenuId(null);
+                            messageInputRef.current?.focus();
+                            setTimeout(() => messageInputRef.current?.focus(), 20);
+                          }}
+                          className="w-full px-3.5 py-2.5 flex items-center gap-2.5 hover:bg-white/10 transition text-left"
+                        >
+                          <span>↩️</span>
+                          <span>Cevapla (Oda içinde yanıtla)</span>
+                        </button>
+
+                        {!isMine && item.senderClientId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveActionMenuId(null);
+                              openDm(item.senderClientId, item.senderName);
+                            }}
+                            className="w-full px-3.5 py-2.5 flex items-center gap-2.5 hover:bg-white/10 transition text-left"
+                          >
+                            <span>👤</span>
+                            <span>Özel olarak cevapla</span>
+                          </button>
+                        )}
+
+                        {hasLetters && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveActionMenuId(null);
+                              handleToggleOrTranslateMessage(item.id, item.text);
+                            }}
+                            className="w-full px-3.5 py-2.5 flex items-center gap-2.5 hover:bg-white/10 transition text-left"
+                          >
+                            <span>🌐</span>
+                            <span>Çevir (Mesajı çevirir)</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMessageText(item.id, item.text)}
+                          className="w-full px-3.5 py-2.5 flex items-center gap-2.5 hover:bg-white/10 transition text-left"
+                        >
+                          <span>📋</span>
+                          <span>
+                            {copiedMsgId === item.id
+                              ? 'Kopyalandı ✓'
+                              : 'Kopyala (Metni kopyalar)'}
+                          </span>
+                        </button>
+
+                        {!isMine && item.senderClientId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveActionMenuId(null);
                               handleReportUser(
                                 item.senderClientId!,
                                 item.senderName || 'Kullanıcı'
-                              )
-                            }
-                            title="Kötü Amaçlı Bildir"
-                            className="opacity-60 hover:opacity-100 text-rose-500 dark:text-rose-400"
+                              );
+                            }}
+                            className="w-full px-3.5 py-2.5 flex items-center gap-2.5 hover:bg-rose-500/20 text-rose-400 transition text-left border-t border-white/10 mt-0.5 pt-2"
                           >
-                            <ShieldAlert className="w-3 h-3" />
+                            <span>🛡️</span>
+                            <span>Bildir / Engelle</span>
                           </button>
                         )}
                       </div>
                     </div>
-                  )}
-
-                  {item.replyTo && (
-                    <div
-                      className={`mb-1.5 px-2.5 py-1.5 rounded-lg border-l-2 text-xs ${
-                        isMine
-                          ? 'bg-black/15 border-white/80 text-white/95'
-                          : 'bg-slate-100 dark:bg-neutral-900/60 border-[#1A81E5]'
-                      }`}
-                    >
-                      <div
-                        className={`font-semibold ${
-                          isMine
-                            ? 'text-white'
-                            : 'text-blue-700 dark:text-blue-400'
-                        }`}
-                      >
-                        {item.replyTo.senderName}
-                      </div>
-                      <div
-                        className={`truncate ${
-                          isMine
-                            ? 'text-blue-100'
-                            : 'text-slate-500 dark:text-neutral-400'
-                        }`}
-                      >
-                        {item.replyTo.text}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-end justify-between gap-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={
-                          isEmojiOnly
-                            ? 'text-2xl leading-none py-0.5'
-                            : 'text-[18px] font-medium whitespace-pre-wrap break-words leading-snug'
-                        }
-                      >
-                        {item.text}
-                      </p>
-                      {!isMine &&
-                        translations[`${item.id}_${uiLang}`] &&
-                        !hiddenTranslationIds[`${item.id}_${uiLang}`] && (
-                          <p className="mt-1.5 pt-1 border-t border-slate-200/70 dark:border-neutral-700/70 text-[15px] font-medium text-[#1A81E5] dark:text-blue-300 whitespace-pre-wrap break-words flex items-start gap-1">
-                            <Globe className="w-3.5 h-3.5 shrink-0 translate-y-1 opacity-80" />
-                            <span>{translations[`${item.id}_${uiLang}`]}</span>
-                          </p>
-                        )}
-                    </div>
-                    <span
-                      className={`text-[11px] shrink-0 select-none translate-y-0.5 ${
-                        isMine
-                          ? 'text-blue-100/90'
-                          : 'text-slate-400 dark:text-neutral-400'
-                      }`}
-                    >
-                      {formatTime(item.timestamp)}
-                    </span>
-                  </div>
-
-                  {!isMine && (
-                    <div className="mt-1.5 pt-1 border-t border-slate-100 dark:border-white/5 flex items-center justify-end gap-3 opacity-85 group-hover:opacity-100 transition">
-                      {hasLetters && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleToggleOrTranslateMessage(item.id, item.text)
-                          }
-                          className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-[#1A81E5] dark:hover:text-white"
-                        >
-                          <Globe className="w-3 h-3" />
-                          <span>
-                            {translations[`${item.id}_${uiLang}`] &&
-                            !hiddenTranslationIds[`${item.id}_${uiLang}`]
-                              ? t.original
-                              : t.translate}
-                          </span>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReplyingTo({
-                            id: item.id,
-                            senderName: item.senderName || 'Kullanıcı',
-                            text: item.text,
-                          });
-                          messageInputRef.current?.focus();
-                          setTimeout(() => messageInputRef.current?.focus(), 20);
-                        }}
-                        className="text-xs flex items-center gap-1 font-medium text-slate-400 hover:text-blue-600 dark:hover:text-white"
-                      >
-                        <Reply className="w-3 h-3" />
-                        <span>{t.reply}</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
             );
           })}

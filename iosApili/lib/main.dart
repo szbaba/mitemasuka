@@ -102,6 +102,7 @@ class ChatMessage {
   final Map<String, dynamic>? replyTo;
   final String? whisperToClientId;
   final String? whisperToName;
+  final Map<String, List<String>> reactions;
 
   ChatMessage({
     required this.id,
@@ -118,9 +119,18 @@ class ChatMessage {
     this.replyTo,
     this.whisperToClientId,
     this.whisperToName,
-  });
+    Map<String, List<String>>? reactions,
+  }) : reactions = reactions ?? {};
 
   factory ChatMessage.fromJson(Map<String, dynamic> json, {String kind = 'chat'}) {
+    final Map<String, List<String>> parsedReactions = {};
+    if (json['reactions'] is Map) {
+      (json['reactions'] as Map).forEach((k, v) {
+        if (v is List) {
+          parsedReactions[k.toString()] = v.map((e) => e.toString()).toList();
+        }
+      });
+    }
     return ChatMessage(
       id: (json['id'] ?? DateTime.now().millisecondsSinceEpoch.toString()).toString(),
       kind: (json['kind'] ?? kind).toString(),
@@ -138,6 +148,7 @@ class ChatMessage {
           : null,
       whisperToClientId: json['whisperToClientId']?.toString(),
       whisperToName: json['whisperToName']?.toString(),
+      reactions: parsedReactions,
     );
   }
 }
@@ -570,6 +581,33 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           _translateMessage(msg);
         }
         _scrollToBottom();
+      } else if (event == 'message_reaction' && data is Map<String, dynamic>) {
+        final msgId = (data['messageId'] ?? '').toString();
+        final emoji = (data['emoji'] ?? '').toString();
+        final uname = (data['username'] ?? '').toString();
+        if (msgId.isNotEmpty && emoji.isNotEmpty && uname.isNotEmpty) {
+          void toggleInList(List<ChatMessage> list) {
+            for (final m in list) {
+              if (m.id == msgId) {
+                final users = List<String>.from(m.reactions[emoji] ?? []);
+                if (users.contains(uname)) {
+                  users.remove(uname);
+                } else {
+                  users.add(uname);
+                }
+                if (users.isEmpty) {
+                  m.reactions.remove(emoji);
+                } else {
+                  m.reactions[emoji] = users;
+                }
+              }
+            }
+          }
+          setState(() {
+            toggleInList(_messages);
+            toggleInList(_whispers);
+          });
+        }
       } else if (event == 'user_typing' && data is Map<String, dynamic>) {
         final uid = (data['userId'] ?? '').toString();
         final cid = (data['clientId'] ?? '').toString();
@@ -802,6 +840,189 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             child: const Text('Kabul Ediyorum ve Başla'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showMessageActionModal(ChatMessage item, bool isMine, bool hasLetters) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment:
+                isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: [
+              // Üst: 6'lı WhatsApp Tarzı Emoji Tepki Barı
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1F1F1F),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) {
+                    final myReact =
+                        (item.reactions[emo] ?? []).contains(_myUsername);
+                    return GestureDetector(
+                      onTap: () {
+                        _emit('react_message', {
+                          'messageId': item.id,
+                          'emoji': emo,
+                        });
+                        Navigator.of(ctx).pop();
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: myReact
+                              ? Colors.white.withValues(alpha: 0.18)
+                              : Colors.transparent,
+                        ),
+                        child: Text(
+                          emo,
+                          style: const TextStyle(fontSize: 22),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Alt: 5'li İşlem Menüsü
+              Container(
+                width: 245,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1F1F1F),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.38),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildActionMenuItem(
+                      emoji: '↩️',
+                      label: 'Cevapla (Oda içinde yanıtla)',
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        setState(() => _replyingTo = item);
+                        _inputFocusNode.requestFocus();
+                      },
+                    ),
+                    if (!isMine && item.senderClientId != null)
+                      _buildActionMenuItem(
+                        emoji: '👤',
+                        label: 'Özel olarak cevapla',
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          setState(() {
+                            _dmDraftPeer = RoomUser(
+                              id: item.senderId ?? '',
+                              clientId: item.senderClientId!,
+                              username: item.senderName ?? 'User',
+                              color: item.senderColor ?? '#1A81E5',
+                            );
+                            _activeView = 'dm';
+                          });
+                        },
+                      ),
+                    if (hasLetters)
+                      _buildActionMenuItem(
+                        emoji: '🌐',
+                        label: 'Çevir (Mesajı çevirir)',
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _translateMessage(item);
+                        },
+                      ),
+                    _buildActionMenuItem(
+                      emoji: '📋',
+                      label: 'Kopyala (Metni kopyalar)',
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: item.text));
+                        Navigator.of(ctx).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Mesaj panoya kopyalandı.'),
+                            duration: Duration(seconds: 1),
+                          ),
+                        );
+                      },
+                    ),
+                    if (!isMine && item.senderClientId != null)
+                      _buildActionMenuItem(
+                        emoji: '🛡️',
+                        label: 'Bildir / Engelle',
+                        isDanger: true,
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _showReportConfirmModal(
+                            item.senderClientId!,
+                            item.senderName ?? 'Kullanıcı',
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildActionMenuItem({
+    required String emoji,
+    required String label,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 15)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isDanger ? const Color(0xFFF87171) : Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1571,6 +1792,37 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                     RegExp(r'\p{L}', unicode: true).hasMatch(item.text);
                                 final trKey = '${item.id}_$_uiLang';
                                 final translated = _translations[trKey];
+                                final activeReactions = item.reactions.entries
+                                    .where((e) => e.value.isNotEmpty)
+                                    .toList();
+
+                                final sideDotBtn = GestureDetector(
+                                  onTap: () => _showMessageActionModal(
+                                    item,
+                                    isMine,
+                                    hasLetters,
+                                  ),
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: isDark
+                                          ? const Color(0xFF262626)
+                                          : const Color(0xFFE2E8F0),
+                                      border: Border.all(color: borderColor),
+                                    ),
+                                    child: Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                );
 
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(vertical: 5),
@@ -1579,167 +1831,245 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                         ? CrossAxisAlignment.end
                                         : CrossAxisAlignment.start,
                                     children: [
-                                      ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxWidth: MediaQuery.of(context).size.width * 0.84,
-                                        ),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isMine
-                                                ? kBrandBlue
-                                                : (isDark
-                                                    ? const Color(0xFF262626)
-                                                    : Colors.white),
-                                            borderRadius: BorderRadius.only(
-                                              topLeft: Radius.circular(isMine ? 18 : 4),
-                                              topRight: Radius.circular(isMine ? 4 : 18),
-                                              bottomLeft: const Radius.circular(18),
-                                              bottomRight: const Radius.circular(18),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children: [
+                                          if (isMine) ...[
+                                            sideDotBtn,
+                                            const SizedBox(width: 8),
+                                          ],
+                                          ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              maxWidth: MediaQuery.of(context).size.width * 0.76,
                                             ),
-                                            border: isMine
-                                                ? null
-                                                : Border.all(color: borderColor),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 10,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: isMine
+                                                    ? kBrandBlue
+                                                    : (isDark
+                                                        ? const Color(0xFF262626)
+                                                        : Colors.white),
+                                                borderRadius: BorderRadius.only(
+                                                  topLeft: Radius.circular(isMine ? 18 : 4),
+                                                  topRight: Radius.circular(isMine ? 4 : 18),
+                                                  bottomLeft: const Radius.circular(18),
+                                                  bottomRight: const Radius.circular(18),
+                                                ),
+                                                border: isMine
+                                                    ? null
+                                                    : Border.all(color: borderColor),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  if (!isMine)
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(bottom: 4),
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          GestureDetector(
+                                                            onTap: () {
+                                                              if (item.senderClientId != null) {
+                                                                setState(() {
+                                                                  _dmDraftPeer = RoomUser(
+                                                                    id: item.senderId ?? '',
+                                                                    clientId: item.senderClientId!,
+                                                                    username: item.senderName ?? 'User',
+                                                                    color: item.senderColor ?? '#1A81E5',
+                                                                  );
+                                                                  _activeView = 'dm';
+                                                                });
+                                                              }
+                                                            },
+                                                            child: Text(
+                                                              item.senderName ?? 'Kullanıcı',
+                                                              style: TextStyle(
+                                                                fontWeight: FontWeight.bold,
+                                                                fontSize: 13.5,
+                                                                color: _parseHexColor(item.senderColor),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 8),
+                                                          if (dist != null)
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(
+                                                                horizontal: 6,
+                                                                vertical: 1.5,
+                                                              ),
+                                                              decoration: BoxDecoration(
+                                                                color: pillBg,
+                                                                borderRadius: BorderRadius.circular(6),
+                                                              ),
+                                                              child: Text(
+                                                                '${dist}m',
+                                                                style: TextStyle(
+                                                                  fontSize: 10.5,
+                                                                  color: textSecondary,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          if (item.senderClientId != null) ...[
+                                                            const SizedBox(width: 6),
+                                                            GestureDetector(
+                                                              onTap: () => _showReportConfirmModal(
+                                                                item.senderClientId!,
+                                                                item.senderName ?? 'Kullanıcı',
+                                                              ),
+                                                              child: const Icon(
+                                                                Icons.shield_outlined,
+                                                                size: 14,
+                                                                color: kCrimsonRed,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  if (item.replyTo != null)
+                                                    Container(
+                                                      margin: const EdgeInsets.only(bottom: 6),
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: isMine
+                                                            ? Colors.black.withValues(alpha: 0.15)
+                                                            : pillBg,
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                      child: Text(
+                                                        '${item.replyTo!['senderName'] ?? ''}: ${item.replyTo!['text'] ?? ''}',
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          color: isMine ? Colors.white : textSecondary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          item.text,
+                                                          style: TextStyle(
+                                                            fontSize: 18,
+                                                            fontWeight: FontWeight.w500,
+                                                            color: isMine ? Colors.white : textPrimary,
+                                                            height: 1.32,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Text(
+                                                        _formatTime(item.timestamp),
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          color: isMine
+                                                              ? Colors.white.withValues(alpha: 0.75)
+                                                              : textSecondary,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  if (translated != null)
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(top: 6),
+                                                      child: Text(
+                                                        translated,
+                                                        style: TextStyle(
+                                                          fontSize: 15,
+                                                          fontStyle: FontStyle.italic,
+                                                          color: isMine
+                                                              ? Colors.white.withValues(alpha: 0.9)
+                                                              : kBrandBlue,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              if (!isMine)
-                                                Padding(
-                                                  padding: const EdgeInsets.only(bottom: 4),
+                                          if (!isMine) ...[
+                                            const SizedBox(width: 8),
+                                            sideDotBtn,
+                                          ],
+                                        ],
+                                      ),
+                                      if (activeReactions.isNotEmpty)
+                                        Padding(
+                                          padding: EdgeInsets.only(
+                                            top: 4,
+                                            left: isMine ? 0 : 4,
+                                            right: isMine ? 36 : 0,
+                                          ),
+                                          child: Wrap(
+                                            spacing: 4,
+                                            runSpacing: 4,
+                                            children: activeReactions.map((entry) {
+                                              final emo = entry.key;
+                                              final users = entry.value;
+                                              final iReacted = users.contains(_myUsername);
+                                              return GestureDetector(
+                                                onTap: () {
+                                                  _emit('react_message', {
+                                                    'messageId': item.id,
+                                                    'emoji': emo,
+                                                  });
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2.5,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: iReacted
+                                                        ? kBrandBlue.withValues(alpha: 0.14)
+                                                        : (isDark
+                                                            ? const Color(0xFF262626)
+                                                            : Colors.white),
+                                                    borderRadius: BorderRadius.circular(999),
+                                                    border: Border.all(
+                                                      color: iReacted
+                                                          ? kBrandBlue
+                                                          : borderColor,
+                                                    ),
+                                                  ),
                                                   child: Row(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
-                                                      GestureDetector(
-                                                        onTap: () {
-                                                          if (item.senderClientId != null) {
-                                                            setState(() {
-                                                              _dmDraftPeer = RoomUser(
-                                                                id: item.senderId ?? '',
-                                                                clientId: item.senderClientId!,
-                                                                username: item.senderName ?? 'User',
-                                                                color: item.senderColor ?? '#1A81E5',
-                                                              );
-                                                              _activeView = 'dm';
-                                                            });
-                                                          }
-                                                        },
-                                                        child: Text(
-                                                          item.senderName ?? 'Kullanıcı',
-                                                          style: TextStyle(
-                                                            fontWeight: FontWeight.bold,
-                                                            fontSize: 13.5,
-                                                            color: _parseHexColor(item.senderColor),
-                                                          ),
+                                                      Text(
+                                                        emo,
+                                                        style: const TextStyle(fontSize: 12),
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        '${users.length}',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: iReacted
+                                                              ? kBrandBlue
+                                                              : textPrimary,
                                                         ),
                                                       ),
-                                                      const SizedBox(width: 8),
-                                                      if (dist != null)
-                                                        Container(
-                                                          padding: const EdgeInsets.symmetric(
-                                                            horizontal: 6,
-                                                            vertical: 1.5,
-                                                          ),
-                                                          decoration: BoxDecoration(
-                                                            color: pillBg,
-                                                            borderRadius: BorderRadius.circular(6),
-                                                          ),
-                                                          child: Text(
-                                                            '${dist}m',
-                                                            style: TextStyle(
-                                                              fontSize: 10.5,
-                                                              color: textSecondary,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      if (item.senderClientId != null) ...[
-                                                        const SizedBox(width: 6),
-                                                        GestureDetector(
-                                                          onTap: () => _showReportConfirmModal(
-                                                            item.senderClientId!,
-                                                            item.senderName ?? 'Kullanıcı',
-                                                          ),
-                                                          child: const Icon(
-                                                            Icons.shield_outlined,
-                                                            size: 14,
-                                                            color: kCrimsonRed,
-                                                          ),
-                                                        ),
-                                                      ],
                                                     ],
                                                   ),
                                                 ),
-                                              if (item.replyTo != null)
-                                                Container(
-                                                  margin: const EdgeInsets.only(bottom: 6),
-                                                  padding: const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: isMine
-                                                        ? Colors.black.withValues(alpha: 0.15)
-                                                        : pillBg,
-                                                    borderRadius: BorderRadius.circular(8),
-                                                  ),
-                                                  child: Text(
-                                                    '${item.replyTo!['senderName'] ?? ''}: ${item.replyTo!['text'] ?? ''}',
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 11.5,
-                                                      color: isMine ? Colors.white : textSecondary,
-                                                    ),
-                                                  ),
-                                                ),
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                crossAxisAlignment: CrossAxisAlignment.end,
-                                                children: [
-                                                  Flexible(
-                                                    child: Text(
-                                                      item.text,
-                                                      style: TextStyle(
-                                                        fontSize: 18,
-                                                        fontWeight: FontWeight.w500,
-                                                        color: isMine ? Colors.white : textPrimary,
-                                                        height: 1.32,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 10),
-                                                  Text(
-                                                    _formatTime(item.timestamp),
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      color: isMine
-                                                          ? Colors.white.withValues(alpha: 0.75)
-                                                          : textSecondary,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              if (translated != null)
-                                                Padding(
-                                                  padding: const EdgeInsets.only(top: 6),
-                                                  child: Text(
-                                                    translated,
-                                                    style: TextStyle(
-                                                      fontSize: 15,
-                                                      fontStyle: FontStyle.italic,
-                                                      color: isMine
-                                                          ? Colors.white.withValues(alpha: 0.9)
-                                                          : kBrandBlue,
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
+                                              );
+                                            }).toList(),
                                           ),
                                         ),
-                                      ),
                                       if (!isMine && _activeView == 'room')
                                         Padding(
                                           padding: const EdgeInsets.only(top: 3, left: 6),
