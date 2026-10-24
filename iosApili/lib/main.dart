@@ -578,7 +578,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         if (_autoTranslate &&
             msg.senderClientId != _myClientId &&
             RegExp(r'\p{L}', unicode: true).hasMatch(msg.text)) {
-          _translateMessage(msg);
+          _translateMessage(msg, forceManual: false);
         }
         _scrollToBottom();
       } else if (event == 'message_reaction' && data is Map<String, dynamic>) {
@@ -669,8 +669,17 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     });
   }
 
-  Future<void> _translateMessage(ChatMessage msg) async {
+  Future<void> _translateMessage(
+    ChatMessage msg, {
+    bool forceManual = true,
+  }) async {
     final key = '${msg.id}_$_uiLang';
+    if (forceManual && _translations.containsKey(key)) {
+      setState(() {
+        _translations.remove(key);
+      });
+      return;
+    }
     if (_translations.containsKey(key) || _translatingIds.contains(key)) return;
     setState(() {
       _translatingIds.add(key);
@@ -679,15 +688,51 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       final resp = await http.post(
         Uri.parse('$_httpBaseUrl/api/translate'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'text': msg.text, 'targetLang': _uiLang}),
+        body: jsonEncode({
+          'text': msg.text,
+          'targetLang': _uiLang,
+          'autoOnly': !forceManual,
+        }),
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final tr = data['translatedText']?.toString() ?? '';
-        if (tr.isNotEmpty && tr.trim().toLowerCase() != msg.text.trim().toLowerCase()) {
-          setState(() {
-            _translations[key] = tr;
-          });
+        if (tr.isNotEmpty &&
+            tr.trim().toLowerCase() != msg.text.trim().toLowerCase()) {
+          if (mounted) {
+            setState(() {
+              _translations[key] = tr;
+            });
+          }
+          return;
+        }
+      }
+
+      // Yedek: Doğrudan Google GTX çeviri uç noktası
+      final target = forceManual
+          ? (_uiLang == 'tr' ? 'en' : 'tr')
+          : _uiLang;
+      final gtxUri = Uri.parse(
+        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${Uri.encodeComponent(target)}&dt=t&q=${Uri.encodeComponent(msg.text.trim())}',
+      );
+      final gtxResp = await http.get(gtxUri);
+      if (gtxResp.statusCode == 200) {
+        final decoded = jsonDecode(gtxResp.body);
+        if (decoded is List && decoded.isNotEmpty && decoded[0] is List) {
+          final sb = StringBuffer();
+          for (final part in decoded[0] as List) {
+            if (part is List && part.isNotEmpty && part[0] != null) {
+              sb.write(part[0].toString());
+            }
+          }
+          final tr = sb.toString().trim();
+          if (tr.isNotEmpty &&
+              tr.toLowerCase() != msg.text.trim().toLowerCase() &&
+              mounted) {
+            setState(() {
+              _translations[key] = tr;
+            });
+          }
         }
       }
     } catch (_) {

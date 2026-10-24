@@ -1270,7 +1270,7 @@ export default function MitemasukaPage() {
       }));
       return;
     }
-    const res = await translateTextFree(text, uiLang);
+    const res = await translateTextFree(text, uiLang, true);
     if (res?.translated) {
       setTranslations((prev) => ({ ...prev, [key]: res.translated }));
       setHiddenTranslationIds((prev) => ({ ...prev, [key]: false }));
@@ -2664,10 +2664,15 @@ export default function MitemasukaPage() {
                         >
                           {item.text}
                         </p>
-                        {!isMine &&
-                          translations[`${item.id}_${uiLang}`] &&
+                        {translations[`${item.id}_${uiLang}`] &&
                           !hiddenTranslationIds[`${item.id}_${uiLang}`] && (
-                            <p className="mt-1.5 pt-1 border-t border-slate-200/70 dark:border-neutral-700/70 text-[15px] font-medium text-[#1A81E5] dark:text-blue-300 whitespace-pre-wrap break-words flex items-start gap-1">
+                            <p
+                              className={`mt-1.5 pt-1 border-t text-[15px] font-medium whitespace-pre-wrap break-words flex items-start gap-1 ${
+                                isMine
+                                  ? 'border-white/25 text-white/95 italic'
+                                  : 'border-slate-200/70 dark:border-neutral-700/70 text-[#1A81E5] dark:text-blue-300'
+                              }`}
+                            >
                               <Globe className="w-3.5 h-3.5 shrink-0 translate-y-1 opacity-80" />
                               <span>{translations[`${item.id}_${uiLang}`]}</span>
                             </p>

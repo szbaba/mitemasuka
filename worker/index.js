@@ -1542,9 +1542,150 @@ export class MitemasukaHub {
   }
 }
 
+async function translateViaGoogleGtx(text, sl, tl) {
+  const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(
+    sl
+  )}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(text)}`;
+  const res = await fetch(gUrl, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    },
+  });
+  if (!res.ok) return { translated: '', detectedLang: '' };
+  const data = await res.json();
+  if (!Array.isArray(data) || !Array.isArray(data[0])) {
+    return { translated: '', detectedLang: '' };
+  }
+  const translated = data[0]
+    .map((part) => (Array.isArray(part) ? String(part[0] || '') : ''))
+    .join('')
+    .trim();
+  const detectedLang =
+    typeof data[2] === 'string' ? data[2].toLowerCase() : '';
+  return { translated, detectedLang };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // 🌐 Merkezi Çeviri Uç Noktası (/api/translate ve /api/v1/protocol/translate)
+    if (
+      url.pathname === '/api/translate' ||
+      url.pathname === '/api/v1/protocol/translate'
+    ) {
+      const corsHeaders = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Mitemasuka-Key',
+      };
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: corsHeaders });
+      }
+      try {
+        let text = url.searchParams.get('text') || '';
+        let targetLang = url.searchParams.get('targetLang') || 'tr';
+        let autoOnly = url.searchParams.get('autoOnly') === 'true';
+
+        if (request.method === 'POST') {
+          const body = await request.json().catch(() => ({}));
+          if (body && typeof body.text === 'string') text = body.text;
+          if (body && typeof body.targetLang === 'string') {
+            targetLang = body.targetLang;
+          }
+          if (body && typeof body.autoOnly === 'boolean') {
+            autoOnly = body.autoOnly;
+          }
+        }
+
+        const clean = String(text || '').trim();
+        if (!clean) {
+          return new Response(
+            JSON.stringify({ translatedText: '', detectedLang: '' }),
+            { headers: corsHeaders }
+          );
+        }
+
+        let { translated, detectedLang } = await translateViaGoogleGtx(
+          clean,
+          'auto',
+          targetLang
+        );
+
+        const sameText =
+          !translated ||
+          translated.trim().toLowerCase() === clean.toLowerCase();
+
+        // Otomatik çeviri modunda mesaj zaten hedef dildeyse boş dön
+        if (autoOnly) {
+          if (
+            sameText ||
+            (detectedLang && detectedLang.startsWith(targetLang.toLowerCase()))
+          ) {
+            return new Response(
+              JSON.stringify({ translatedText: '', detectedLang }),
+              { headers: corsHeaders }
+            );
+          }
+          return new Response(
+            JSON.stringify({ translatedText: translated, detectedLang }),
+            { headers: corsHeaders }
+          );
+        }
+
+        // Manuel "Çevir" butonuna basıldığında:
+        // Eğer mesaj zaten hedef dildeyse (örn. TR arayüzde Türkçe mesaj) veya aynı döndüyse,
+        // karşı dile (TR <-> EN) çevir ki kullanıcı her zaman anlamlı bir çeviri görsün.
+        if (
+          sameText ||
+          (detectedLang && detectedLang.startsWith(targetLang.toLowerCase()))
+        ) {
+          const fallbackTarget =
+            targetLang.toLowerCase() === 'tr' ? 'en' : 'tr';
+          const fallbackRes = await translateViaGoogleGtx(
+            clean,
+            'auto',
+            fallbackTarget
+          );
+          if (
+            fallbackRes.translated &&
+            fallbackRes.translated.trim().toLowerCase() !== clean.toLowerCase()
+          ) {
+            translated = fallbackRes.translated;
+            detectedLang = fallbackRes.detectedLang || detectedLang;
+          } else {
+            // Kısa kelimeler için açık kaynak-hedef dil denemesi
+            const explicitRes = await translateViaGoogleGtx(
+              clean,
+              targetLang.toLowerCase() === 'tr' ? 'en' : 'tr',
+              targetLang.toLowerCase()
+            );
+            if (
+              explicitRes.translated &&
+              explicitRes.translated.trim().toLowerCase() !== clean.toLowerCase()
+            ) {
+              translated = explicitRes.translated;
+            }
+          }
+        }
+
+        return new Response(
+          JSON.stringify({
+            translatedText: translated,
+            detectedLang,
+          }),
+          { headers: corsHeaders }
+        );
+      } catch {
+        return new Response(
+          JSON.stringify({ translatedText: '', error: 'Translate failed' }),
+          { status: 200, headers: corsHeaders }
+        );
+      }
+    }
+
     const rawRegion = url.searchParams.get('region') || 'global-hub-v1';
     const safeRegion =
       String(rawRegion)
