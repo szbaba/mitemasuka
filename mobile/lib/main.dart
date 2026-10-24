@@ -244,7 +244,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   bool _showRadiusMenu = false;
   bool _showMembersDrawer = false;
   String _uiLang = 'tr';
-  bool _autoTranslate = true;
+  bool _autoTranslate = false;
   final Map<String, String> _translations = {};
   final Set<String> _translatingIds = {};
   Set<String> _blockedClientIds = {};
@@ -2269,6 +2269,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               textInputAction: TextInputAction.send,
                               onChanged: _handleInputChanged,
                               onSubmitted: (_) => _handleSendMessage(),
+                              onTapOutside: (_) => _inputFocusNode.unfocus(),
                               decoration: InputDecoration(
                                 hintText: _isBanned
                                     ? 'Bugün susturuldunuz'

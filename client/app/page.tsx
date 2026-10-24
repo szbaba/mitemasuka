@@ -398,7 +398,7 @@ export default function MitemasukaPage() {
 
   // Yerel Simülatör & 3'lü Bağımsız Bildirim / Ses Ayarları + Tema (Corsecure Light/Dark) + Çoklu Dil
   const [uiLang, setUiLang] = useState<LangCode>('tr');
-  const [autoTranslate, setAutoTranslate] = useState<boolean>(true);
+  const [autoTranslate, setAutoTranslate] = useState<boolean>(false);
   const [translations, setTranslations] = useState<Record<string, string>>({});
   const [hiddenTranslationIds, setHiddenTranslationIds] = useState<
     Record<string, boolean>
@@ -489,7 +489,7 @@ export default function MitemasukaPage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('mitemasuka_auto_translate', String(autoTranslate));
+      localStorage.setItem('mitemasuka_auto_translate_v2', String(autoTranslate));
     } catch {}
   }, [autoTranslate]);
 
@@ -608,7 +608,7 @@ export default function MitemasukaPage() {
       }
       const detected = detectBrowserLang();
       setUiLang(detected);
-      const savedAutoTr = localStorage.getItem('mitemasuka_auto_translate');
+      const savedAutoTr = localStorage.getItem('mitemasuka_auto_translate_v2');
       if (savedAutoTr !== null) {
         setAutoTranslate(savedAutoTr === 'true');
       }
