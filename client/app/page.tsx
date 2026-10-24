@@ -37,6 +37,9 @@ import {
   Sun,
   Moon,
   Palette,
+  FileText,
+  ShieldCheck,
+  ExternalLink,
 } from 'lucide-react';
 import {
   LangCode,
@@ -46,6 +49,7 @@ import {
   localizeSystemMessage,
   UI_TEXT,
 } from './i18n';
+import { LEGAL_DOCS } from './legalData';
 
 interface WsClient {
   emit: (event: string, data?: unknown) => void;
@@ -452,6 +456,7 @@ export default function MitemasukaPage() {
     null
   );
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [activeLegalDoc, setActiveLegalDoc] = useState<'privacy' | 'terms' | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const channelEndRef = useRef<HTMLDivElement | null>(null);
@@ -2045,6 +2050,34 @@ export default function MitemasukaPage() {
                 </span>
               )}
             </button>
+
+            <button
+              onClick={() => {
+                setShowHamburgerMenu(false);
+                setActiveLegalDoc('privacy');
+              }}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
+            >
+              <span className="flex items-center gap-3">
+                <ShieldCheck className="w-4 h-4 text-[#1A81E5] dark:text-[#5CA9F2] shrink-0" />
+                <span>{t.privacyPolicy}</span>
+              </span>
+              <span className="text-[11px] text-slate-400">↗</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowHamburgerMenu(false);
+                setActiveLegalDoc('terms');
+              }}
+              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-neutral-700/60 transition text-left"
+            >
+              <span className="flex items-center gap-3">
+                <FileText className="w-4 h-4 text-[#1A81E5] dark:text-[#5CA9F2] shrink-0" />
+                <span>{t.termsOfUse}</span>
+              </span>
+              <span className="text-[11px] text-slate-400">↗</span>
+            </button>
           </div>
 
           {/* 🎨 SOHBET ZEMİNİ SEÇİCİ (Kalıcı & Genişletilebilir) */}
@@ -2386,6 +2419,24 @@ export default function MitemasukaPage() {
           >
             {t.whatIsMitemasuka}
           </button>
+
+          <div className="flex items-center justify-center gap-3 pt-1 text-[11px] text-slate-400 dark:text-neutral-500">
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc('privacy')}
+              className="hover:text-[#1A81E5] dark:hover:text-[#5CA9F2] underline underline-offset-2 transition"
+            >
+              {t.privacyPolicy}
+            </button>
+            <span>&middot;</span>
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc('terms')}
+              className="hover:text-[#1A81E5] dark:hover:text-[#5CA9F2] underline underline-offset-2 transition"
+            >
+              {t.termsOfUse}
+            </button>
+          </div>
         </div>
       ) : (
         <main
@@ -3996,6 +4047,110 @@ export default function MitemasukaPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: GİZLİLİK POLİTİKASI & KULLANIM ŞARTLARI (EULA) OKUMA PENCERESİ */}
+      {activeLegalDoc && (
+        <div
+          onClick={() => setActiveLegalDoc(null)}
+          className="fixed inset-0 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            dir={uiLang === 'ar' ? 'rtl' : 'ltr'}
+            className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 rounded-3xl max-w-lg w-full max-h-[86vh] flex flex-col shadow-2xl overflow-hidden"
+          >
+            <div className="px-5 pt-4 pb-3 border-b border-slate-200 dark:border-neutral-800 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-neutral-800 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setActiveLegalDoc('privacy')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                    activeLegalDoc === 'privacy'
+                      ? 'bg-[#1A81E5] text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-neutral-300 hover:text-slate-900'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{t.privacyPolicy}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveLegalDoc('terms')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                    activeLegalDoc === 'terms'
+                      ? 'bg-[#1A81E5] text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-neutral-300 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>{t.termsOfUse}</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveLegalDoc(null)}
+                className="p-1.5 rounded-full bg-slate-100 dark:bg-neutral-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 overflow-y-auto space-y-4 text-xs sm:text-sm text-slate-700 dark:text-neutral-200 leading-relaxed">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  {LEGAL_DOCS[uiLang][activeLegalDoc].title}
+                </h3>
+                <p className="text-[11px] text-slate-400 dark:text-neutral-500 mt-0.5">
+                  {LEGAL_DOCS[uiLang][activeLegalDoc].effectiveDate} &middot;{' '}
+                  {LEGAL_DOCS[uiLang][activeLegalDoc].version}
+                </p>
+              </div>
+
+              {LEGAL_DOCS[uiLang][activeLegalDoc].sections.map((sec, idx) => (
+                <div
+                  key={idx}
+                  className="bg-slate-50 dark:bg-neutral-800/60 border border-slate-200/80 dark:border-neutral-800 rounded-2xl p-3.5 space-y-2"
+                >
+                  <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                    {sec.heading}
+                  </h4>
+                  {sec.paragraphs.map((p, pIdx) => (
+                    <p key={pIdx} className="text-xs sm:text-[13px] text-slate-600 dark:text-neutral-300">
+                      {p}
+                    </p>
+                  ))}
+                  {sec.bullets && sec.bullets.length > 0 && (
+                    <ul className="list-disc list-inside space-y-1 text-xs sm:text-[13px] text-slate-600 dark:text-neutral-300 pt-1">
+                      {sec.bullets.map((b, bIdx) => (
+                        <li key={bIdx}>{b}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 dark:border-neutral-800 bg-slate-50/80 dark:bg-neutral-900 flex items-center justify-between gap-2 shrink-0">
+              <a
+                href={`/legal/${activeLegalDoc}/${uiLang}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1A81E5] dark:text-[#5CA9F2] hover:underline"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>{LEGAL_DOCS[uiLang][activeLegalDoc].openInBrowserLabel}</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setActiveLegalDoc(null)}
+                className="px-4 py-2 rounded-xl bg-[#1A81E5] hover:bg-[#166DC4] text-white font-semibold text-xs transition"
+              >
+                {LEGAL_DOCS[uiLang][activeLegalDoc].closeLabel}
+              </button>
+            </div>
           </div>
         </div>
       )}

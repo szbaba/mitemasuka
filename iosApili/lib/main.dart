@@ -933,13 +933,50 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           'Mitemasuka Topluluk Kuralları',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
-        content: const SingleChildScrollView(
-          child: Text(
-            'Mitemasuka, 100 metre çevrenizdeki gerçek kişilerle anlık iletişim kurmanızı sağlar.\n\n'
-            '• Taciz, küfür, nefret söylemi ve spam kesinlikle yasaktır.\n'
-            '• Rahatsız edici kullanıcıları mesaj üzerindeki kalkan ikonuyla bildirebilir veya engelleyebilirsiniz.\n'
-            '• 3 farklı kişi tarafından bildirilen kullanıcılar o gün boyunca otomatik olarak susturulur.',
-            style: TextStyle(fontSize: 14, height: 1.45),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Mitemasuka, 100 metre çevrenizdeki gerçek kişilerle anlık iletişim kurmanızı sağlar.\n\n'
+                '• Taciz, küfür, nefret söylemi ve spam kesinlikle yasaktır.\n'
+                '• Rahatsız edici kullanıcıları mesaj üzerindeki kalkan ikonuyla bildirebilir veya engelleyebilirsiniz.\n'
+                '• 3 farklı kişi tarafından bildirilen kullanıcılar o gün boyunca otomatik olarak susturulur.',
+                style: TextStyle(fontSize: 14, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  GestureDetector(
+                    onTap: () => _showLegalDialog('privacy'),
+                    child: const Text(
+                      'Gizlilik Politikası',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: kBrandBlue,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _showLegalDialog('terms'),
+                    child: const Text(
+                      'Kullanım Şartları (EULA)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: kBrandBlue,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
         actions: [
@@ -954,6 +991,174 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             child: const Text('Kabul Ediyorum ve Başla'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showLegalDialog(String initialTab) {
+    String activeTab = initialTab;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final isTr = _uiLang == 'tr';
+          final privacyTitle = isTr ? 'Gizlilik Politikası' : 'Privacy Policy';
+          final termsTitle = isTr ? 'Kullanım Şartları (EULA)' : 'Terms of Use (EULA)';
+          final webUrl = 'https://mitemasuka.com/legal/$activeTab/$_uiLang/';
+
+          final bodyText = activeTab == 'privacy'
+              ? (isTr
+                  ? 'Yürürlük Tarihi: 24 Ekim 2026 · Sürüm: v1.0\n\n'
+                    '1. Genel Bakış\n'
+                    'Mitemasuka, yakın çevrenizdeki insanlarla aynı menzil odasında gerçek zamanlı ve geçici (ephemeral) olarak iletişim kurmanızı sağlayan konum tabanlı bir sosyal iletişim platformudur. Uygulamayı kullanmak için telefon numarası, e-posta adresi, ad-soyad veya şifre ile hesap oluşturmanız gerekmez.\n\n'
+                    '2. İşlenen Veriler ve Kullanım Amaçları\n'
+                    '• Anlık Konum Bilgisi (GPS): Yalnızca açık izninizle cihazınızın anlık koordinatları alınır ve seçtiğiniz menzildeki (100m, 500m, 1 km, 5 km) aktif odaya bağlanmanız için kullanılır. Geçmiş konum hareketleriniz kayıt altına alınmaz.\n'
+                    '• Rastgele Cihaz Kimliği ve Rumuz: Cihazınızda yerel ve rastgele bir oturum kimliği (clientId) ile geçici bir rumuz oluşturulur.\n'
+                    '• Geçici Mesajlar ve 1-e-1 Özel Fısıltılar: Oda mesajları ve 1-e-1 özel sohbetler kalıcı olarak arşivlenmez; odadan ayrıldığınızda veya oturum kapandığında silinir.\n'
+                    '• Mikrofon ve Kamera: Mikrofon yalnızca sesli dikte/canlı altyazı için anlık kullanılır; ses kaydı sunucuya yüklenmez. Kamera yalnızca oda QR kodu okutmak için kullanılır.\n\n'
+                    '3. Veri Paylaşımı ve Üçüncü Taraf Hizmetler\n'
+                    'Kullanıcı verileri reklam ağlarına satılmaz. Gerçek zamanlı şifreli iletişim için Cloudflare Edge altyapısı kullanılır.\n\n'
+                    '4. Veri Silme / Sıfırlama Hakkı\n'
+                    'Uygulama verilerini temizleyerek yerel verilerinizi anında sıfırlayabilir veya info@mitemasuka.com adresine yazarak geçici oturum kayıtlarının silinmesini talep edebilirsiniz (48 saat içinde sonuçlandırılır).\n\n'
+                    '5. Yaş Sınırı ve İletişim\n'
+                    'Mitemasuka 13 yaş ve üzeri kullanıcılar içindir.\n'
+                    'İletişim: info@mitemasuka.com'
+                  : 'Effective Date: October 24, 2026 · Version: v1.0\n\n'
+                    '1. Overview\n'
+                    'Mitemasuka is a location-based proximity communication platform for real-time, ephemeral conversations nearby. No account registration with phone number, email, full name, or password is required.\n\n'
+                    '2. Data Processed\n'
+                    '• Real-Time Location (GPS): Used solely with your permission to connect you to the active proximity room (100m, 500m, 1 km, 5 km). No location history is stored.\n'
+                    '• Random Device ID & Nickname: Generated locally on your device.\n'
+                    '• Ephemeral Messages & 1-on-1 Whispers: Delivered in real time and never permanently archived.\n'
+                    '• Microphone & Camera: Microphone is used only on-device for voice dictation (no audio stored). Camera is used only for QR code scanning.\n\n'
+                    '3. Data Deletion & Contact\n'
+                    'We do not sell user data. You can reset local data anytime or email info@mitemasuka.com for session data deletion (completed within 48 hours). Intended for users aged 13+.')
+              : (isTr
+                  ? 'Yürürlük Tarihi: 24 Ekim 2026 · Sürüm: v1.0\n\n'
+                    '1. Şartların Kabulü\n'
+                    'Mitemasuka uygulamasını kullanarak işbu Kullanım Şartlarını ve Topluluk Kurallarını kabul etmiş sayılırsınız.\n\n'
+                    '2. Kullanıcı İçeriği (UGC) ve Sıfır Tolerans Politikası\n'
+                    'Aşağıdaki davranışlara karşı Sıfır Tolerans Politikası uygulanır:\n'
+                    '• Küfür, hakaret, nefret söylemi veya ayrımcılık,\n'
+                    '• Taciz, tehdit, ısrarlı takip veya zorbalık,\n'
+                    '• Müstehcen, şiddet içerikli veya yasa dışı paylaşımlar,\n'
+                    '• Spam, dolandırıcılık veya başkalarının kişisel bilgilerini ifşa etmek.\n\n'
+                    '3. Otomatik Filtreleme, Bildirme, Engelleme ve Karantina\n'
+                    'Apple App Store Guideline 1.2 standartları gereği:\n'
+                    '• Otomatik Küfür Filtresi uygunsuz kelimeleri anında maskeler.\n'
+                    '• Her mesajın yanındaki menüden kullanıcıyı tek dokunuşla Engelleyebilir (Block) veya Bildirebilirsiniz (Report).\n'
+                    '• Odada 3 farklı kullanıcı tarafından bildirilen hesaplar sistem tarafından 24 saat boyunca otomatik olarak susturulur (Auto-Mute).\n'
+                    '• Tüm bildirimler en geç 24 saat içinde incelenir ve ihlal yapan cihaz kimlikleri kalıcı olarak uzaklaştırılır.\n\n'
+                    '4. Sorumluluk Sınırı ve İletişim\n'
+                    'Hizmet "olduğu gibi" sunulmaktadır. Destek ve şikâyet: info@mitemasuka.com'
+                  : 'Effective Date: October 24, 2026 · Version: v1.0\n\n'
+                    '1. Acceptance of Terms\n'
+                    'By using Mitemasuka, you agree to these Terms of Use and Community Guidelines.\n\n'
+                    '2. User-Generated Content (UGC) & Zero-Tolerance Policy\n'
+                    'We enforce a strict Zero-Tolerance Policy against:\n'
+                    '• Profanity, hate speech, harassment, threats, or bullying,\n'
+                    '• Obscene, violent, or illegal content,\n'
+                    '• Spam, scams, or sharing private data without consent.\n\n'
+                    '3. Filtering, Reporting, Blocking & Auto-Mute (Guideline 1.2)\n'
+                    '• Real-time automated profanity filter.\n'
+                    '• Instant 1-tap User Blocking and Content Reporting on every message.\n'
+                    '• Any user reported by 3 distinct participants in a room is automatically muted for 24 hours, and all reports are reviewed within 24 hours.\n\n'
+                    '4. Contact\n'
+                    'Support & abuse reports: info@mitemasuka.com');
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            titlePadding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+            contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setModalState(() => activeTab = 'privacy'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: activeTab == 'privacy'
+                                ? kBrandBlue
+                                : Colors.grey.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            isTr ? 'Gizlilik' : 'Privacy',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: activeTab == 'privacy' ? Colors.white : null,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setModalState(() => activeTab = 'terms'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: activeTab == 'terms'
+                                ? kBrandBlue
+                                : Colors.grey.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            isTr ? 'Kullanım Şartları' : 'Terms (EULA)',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: activeTab == 'terms' ? Colors.white : null,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  activeTab == 'privacy' ? privacyTitle : termsTitle,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 340,
+              child: SingleChildScrollView(
+                child: Text(
+                  bodyText,
+                  style: const TextStyle(fontSize: 13, height: 1.5),
+                ),
+              ),
+            ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
+            actions: [
+              TextButton.icon(
+                onPressed: () => launchUrl(Uri.parse(webUrl)),
+                icon: const Icon(CupertinoIcons.arrow_up_right_square, size: 15),
+                label: Text(
+                  isTr ? 'Web\'de Aç' : 'Open Web',
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: kBrandBlue),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(isTr ? 'Kapat' : 'Close'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -2833,6 +3038,38 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               return;
                             }
                             _emit('set_ghost_mode', {'enabled': !_ghostMode});
+                          },
+                        ),
+                        ListTile(
+                          dense: true,
+                          leading: Icon(
+                            CupertinoIcons.lock_shield,
+                            size: 18,
+                            color: isDark ? kBrandBlueDarkText : kBrandBlue,
+                          ),
+                          title: Text(
+                            _uiLang == 'tr' ? 'Gizlilik Politikası' : 'Privacy Policy',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          onTap: () {
+                            setState(() => _showHamburgerMenu = false);
+                            _showLegalDialog('privacy');
+                          },
+                        ),
+                        ListTile(
+                          dense: true,
+                          leading: Icon(
+                            CupertinoIcons.doc_text,
+                            size: 18,
+                            color: isDark ? kBrandBlueDarkText : kBrandBlue,
+                          ),
+                          title: Text(
+                            _uiLang == 'tr' ? 'Kullanım Şartları' : 'Terms of Use',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          onTap: () {
+                            setState(() => _showHamburgerMenu = false);
+                            _showLegalDialog('terms');
                           },
                         ),
                         const Divider(height: 12),

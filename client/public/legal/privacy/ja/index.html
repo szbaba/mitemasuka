@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>プライバシーポリシー — Mitemasuka</title>
+  <meta name="description" content="Mitemasuka プライバシーポリシー" />
+  <link rel="icon" href="/icon-512.png" />
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --brand: #1A81E5;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121214;
+        --card: #1c1c1f;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --border: #2e2e33;
+        --brand: #3b9eff;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      padding: 24px 16px 64px;
+    }
+    .wrap {
+      max-width: 780px;
+      margin: 0 auto;
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .brand img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #fff;
+      border: 1px solid var(--border);
+      object-fit: contain;
+    }
+    .brand .suka { color: var(--brand); }
+    .nav-links a {
+      color: var(--brand);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      margin-left: 14px;
+    }
+    .lang-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 24px;
+    }
+    .lang-pill {
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+    .lang-pill.active {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+    h1 {
+      font-size: 28px;
+      margin: 0 0 6px;
+      letter-spacing: -0.02em;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13.5px;
+      margin-bottom: 24px;
+    }
+    .card-sec {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px 22px;
+      margin-bottom: 14px;
+    }
+    .card-sec h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+      color: var(--text);
+    }
+    .card-sec p {
+      margin: 0 0 10px;
+      font-size: 14.5px;
+    }
+    .card-sec p:last-child { margin-bottom: 0; }
+    .card-sec ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+      font-size: 14.5px;
+    }
+    .card-sec li { margin-bottom: 8px; }
+    footer {
+      margin-top: 36px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer a { color: var(--brand); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top-bar">
+      <a href="/" class="brand">
+        <img src="/icon-512.png" alt="Mitemasuka" />
+        <span>mitema<span class="suka">suka</span></span>
+      </a>
+      <nav class="nav-links">
+        <a href="/legal/terms/ja/">利用規約 (EULA)</a>
+        <a href="/">Uygulamaya Dön</a>
+      </nav>
+    </header>
+
+    <div class="lang-bar">
+        <a href="/legal/privacy/tr/" class="lang-pill ">Türkçe</a>
+        <a href="/legal/privacy/en/" class="lang-pill ">English</a>
+        <a href="/legal/privacy/ja/" class="lang-pill active">日本語</a>
+        <a href="/legal/privacy/de/" class="lang-pill ">Deutsch</a>
+        <a href="/legal/privacy/es/" class="lang-pill ">Español</a>
+        <a href="/legal/privacy/fr/" class="lang-pill ">Français</a>
+        <a href="/legal/privacy/ru/" class="lang-pill ">Русский</a>
+        <a href="/legal/privacy/ar/" class="lang-pill ">العربية</a>
+    </div>
+
+    <h1>プライバシーポリシー</h1>
+    <div class="meta">発効日: 2026年10月24日 &middot; バージョン: v1.0</div>
+
+    <section class="card-sec">
+      <h2>1. 概要</h2>
+      <p>Mitemasuka（以下「本アプリ」）は、近くにいる人と同じ距離ルーム内でリアルタイムかつ一時的（エフェメラル）に会話できる位置情報ベースのコミュニケーションプラットフォームです。</p>
+      <p>電話番号、メールアドレス、氏名、パスワードによるアカウント登録は一切不要です。</p>
+      
+    </section>
+
+    <section class="card-sec">
+      <h2>2. 取得する情報と利用目的</h2>
+      <p>サービス提供のため、以下の最小限の技術データのみを一時的に処理します：</p>
+      <ul>
+        <li>現在地情報（GPS）：ユーザーの明示的な許可がある場合にのみ、選択した範囲（100m、500m、1km、5km）のルームへの接続および参加者間の概算距離計算のために現在地を使用します。過去の移動履歴は保存されません。</li>
+        <li>ランダムな端末識別子とニックネーム：登録不要で利用できるよう、端末内でランダムなセッションID（clientId）と一時的なニックネームを生成します。</li>
+        <li>ルームメッセージと1対1プライベートチャット：メッセージは現在ルームにいる参加者にのみリアルタイム配信されます。1対1チャットは永続保存されず、退室または終了時に消去されます。</li>
+        <li>マイクとカメラの権限：マイクは音声入力・ライブ字幕機能の使用時のみテキスト変換のために使用され、音声データはサーバーに保存されません。カメラはQRコード読み取り時のみ使用されます。</li>
+        <li>安全・モデレーション記録：通報（レポート）、ブロック設定、不適切語句フィルターの記録を一時的なセキュリティメモリで管理します。</li>
+      </ul>
+    </section>
+
+    <section class="card-sec">
+      <h2>3. 第三者提供と外部サービス</h2>
+      <p>ユーザーデータを広告ネットワークやデータブローカーに販売・貸与することはありません。</p>
+      <ul>
+        <li>Cloudflare, Inc.：暗号化されたリアルタイムWebSocket通信と一時的なルーム制御に使用します。</li>
+        <li>翻訳機能：自動または手動翻訳を使用した際、対象テキストのみが翻訳処理されます。</li>
+      </ul>
+    </section>
+
+    <section class="card-sec">
+      <h2>4. データ保持期間と削除・リセット権</h2>
+      <p>チャット内容は永続データベースに保存されず、セッション終了時に自動消去されます。アプリデータの消去または info@mitemasuka.com へのご連絡により、いつでもデータ削除を要請できます（48時間以内に対応）。</p>
+      
+    </section>
+
+    <section class="card-sec">
+      <h2>5. 年齢制限（13歳以上）</h2>
+      <p>本アプリは13歳以上のユーザーを対象としています。13歳未満の児童から意図的にデータを収集することはありません。</p>
+      
+    </section>
+
+    <section class="card-sec">
+      <h2>6. お問い合わせ</h2>
+      <p>メール: info@mitemasuka.com · URL: https://mitemasuka.com/legal/privacy/</p>
+      
+    </section>
+
+    <footer>
+      <p>&copy; 2026 Mitemasuka &middot; <a href="mailto:info@mitemasuka.com">info@mitemasuka.com</a></p>
+    </footer>
+  </div>
+</body>
+</html>
