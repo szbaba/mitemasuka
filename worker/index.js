@@ -12,8 +12,16 @@ const REPORT_BAN_THRESHOLD = 3;
 const DEFAULT_PLUS_ENABLED = true;
 // Çevrimdışı yakın kullanıcılara kilit ekranı uyandırma bildirimi bekleme süresi (60 sn)
 const WAKE_PUSH_COOLDOWN_MS = 60 * 1000;
-// Çevrede uygulama yüklü sayımı için maksimum son görülme süresi (30 gün)
+// Çevrede uygulama yüklü sayımı için maksimum son görülme süresi (5km için üst sınır: 30 gün)
 const KNOWN_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function getDeviceTtlForRadius(radius) {
+  const r = Number(radius) || 100;
+  if (r <= 100) return 6 * 60 * 60 * 1000; // 100m -> 6 saat
+  if (r <= 500) return 24 * 60 * 60 * 1000; // 500m -> 1 gün (24 saat)
+  if (r <= 1000) return 7 * 24 * 60 * 60 * 1000; // 1km -> 7 gün
+  return 30 * 24 * 60 * 60 * 1000; // 5km -> 30 gün
+}
 
 // Mitemasuka Protokolü (Public & Partner API) Geçerli Anahtarları
 const DEFAULT_PROTOCOL_API_KEYS = new Set([
@@ -200,6 +208,7 @@ export class MitemasukaHub {
   countNearbyInstalledDevices(lat, lng, radius, minCount = 1) {
     if (typeof lat !== 'number' || typeof lng !== 'number') return minCount;
     const now = Date.now();
+    const ttlMs = getDeviceTtlForRadius(radius);
     const matchedClientIds = new Set();
 
     for (const [, u] of this.users.entries()) {
@@ -216,7 +225,7 @@ export class MitemasukaHub {
       if (
         typeof p.lastLat === 'number' &&
         typeof p.lastLng === 'number' &&
-        now - (p.lastSeenAt || 0) <= KNOWN_DEVICE_TTL_MS &&
+        now - (p.lastSeenAt || 0) <= ttlMs &&
         calculateDistanceMeters(lat, lng, p.lastLat, p.lastLng) <= radius
       ) {
         matchedClientIds.add(cid);
