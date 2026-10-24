@@ -245,6 +245,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   bool _showHamburgerMenu = false;
   bool _showRadiusMenu = false;
   bool _showMembersDrawer = false;
+  ChatMessage? _activeActionMessage;
   String _uiLang = 'tr';
   bool _autoTranslate = false;
   final Map<String, String> _translations = {};
@@ -923,156 +924,162 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   }
 
   void _showMessageActionModal(ChatMessage item, bool isMine, bool hasLetters) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.45),
-      builder: (ctx) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment:
-                isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              // Üst: 6'lı WhatsApp Tarzı Emoji Tepki Barı
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1F1F1F),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) {
-                    final myReact =
-                        (item.reactions[emo] ?? []).contains(_myUsername);
-                    return GestureDetector(
-                      onTap: () {
-                        _emit('react_message', {
-                          'messageId': item.id,
-                          'emoji': emo,
-                        });
-                        Navigator.of(ctx).pop();
-                      },
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: myReact
-                              ? Colors.white.withValues(alpha: 0.18)
-                              : Colors.transparent,
-                        ),
-                        child: Text(
-                          emo,
-                          style: const TextStyle(fontSize: 22),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Alt: 5'li İşlem Menüsü
-              Container(
-                width: 245,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1F1F1F),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.38),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildActionMenuItem(
-                      emoji: '↩️',
-                      label: 'Cevapla (Oda içinde yanıtla)',
-                      onTap: () {
-                        Navigator.of(ctx).pop();
-                        setState(() => _replyingTo = item);
-                        _inputFocusNode.requestFocus();
-                      },
-                    ),
-                    if (!isMine && item.senderClientId != null)
-                      _buildActionMenuItem(
-                        emoji: '👤',
-                        label: 'Özel olarak cevapla',
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          setState(() {
-                            _dmDraftPeer = RoomUser(
-                              id: item.senderId ?? '',
-                              clientId: item.senderClientId!,
-                              username: item.senderName ?? 'User',
-                              color: item.senderColor ?? '#1A81E5',
-                            );
-                            _activeView = 'dm';
-                          });
-                        },
-                      ),
-                    if (hasLetters)
-                      _buildActionMenuItem(
-                        emoji: '🌐',
-                        label: _translations.containsKey('${item.id}_$_uiLang')
-                            ? 'Orijinali Göster (Çeviriyi gizle)'
-                            : 'Çevir (Mesajı çevirir)',
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          _translateMessage(item);
-                        },
-                      ),
-                    _buildActionMenuItem(
-                      emoji: '📋',
-                      label: 'Kopyala (Metni kopyalar)',
-                      onTap: () {
-                        Clipboard.setData(ClipboardData(text: item.text));
-                        Navigator.of(ctx).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Mesaj panoya kopyalandı.'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
-                      },
-                    ),
-                    if (!isMine && item.senderClientId != null)
-                      _buildActionMenuItem(
-                        emoji: '🛡️',
-                        label: 'Bildir / Engelle',
-                        isDanger: true,
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          _showReportConfirmModal(
-                            item.senderClientId!,
-                            item.senderName ?? 'Kullanıcı',
-                          );
-                        },
-                      ),
-                  ],
-                ),
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _activeActionMessage = item;
+      _showHamburgerMenu = false;
+      _showRadiusMenu = false;
+      _showMembersDrawer = false;
+    });
+  }
+
+  Widget _buildActionOverlayCard(ChatMessage item) {
+    final isMine = item.senderClientId == _myClientId || item.senderId == _myId;
+    final hasLetters = RegExp(r'\p{L}', unicode: true).hasMatch(item.text);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment:
+          isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        // Üst: 6'lı WhatsApp Tarzı Emoji Tepki Barı
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1F1F1F),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
-        );
-      },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) {
+              final myReact =
+                  (item.reactions[emo] ?? []).contains(_myUsername);
+              return GestureDetector(
+                onTap: () {
+                  _emit('react_message', {
+                    'messageId': item.id,
+                    'emoji': emo,
+                  });
+                  setState(() => _activeActionMessage = null);
+                },
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: myReact
+                        ? Colors.white.withValues(alpha: 0.18)
+                        : Colors.transparent,
+                  ),
+                  child: Text(
+                    emo,
+                    style: const TextStyle(fontSize: 22),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Alt: 5'li İşlem Menüsü
+        Material(
+          color: const Color(0xFF1F1F1F),
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            width: 245,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildActionMenuItem(
+                  emoji: '↩️',
+                  label: 'Cevapla (Oda içinde yanıtla)',
+                  onTap: () {
+                    setState(() {
+                      _activeActionMessage = null;
+                      _replyingTo = item;
+                    });
+                    _inputFocusNode.requestFocus();
+                  },
+                ),
+                if (!isMine && item.senderClientId != null)
+                  _buildActionMenuItem(
+                    emoji: '👤',
+                    label: 'Özel olarak cevapla',
+                    onTap: () {
+                      setState(() {
+                        _activeActionMessage = null;
+                        _dmDraftPeer = RoomUser(
+                          id: item.senderId ?? '',
+                          clientId: item.senderClientId!,
+                          username: item.senderName ?? 'User',
+                          color: item.senderColor ?? '#1A81E5',
+                        );
+                        _activeView = 'dm';
+                      });
+                    },
+                  ),
+                if (hasLetters)
+                  _buildActionMenuItem(
+                    emoji: '🌐',
+                    label: _translations.containsKey('${item.id}_$_uiLang')
+                        ? 'Orijinali Göster (Çeviriyi gizle)'
+                        : 'Çevir (Mesajı çevirir)',
+                    onTap: () {
+                      setState(() => _activeActionMessage = null);
+                      _translateMessage(item);
+                    },
+                  ),
+                _buildActionMenuItem(
+                  emoji: '📋',
+                  label: 'Kopyala (Metni kopyalar)',
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: item.text));
+                    setState(() => _activeActionMessage = null);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Mesaj panoya kopyalandı.'),
+                        duration: Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                ),
+                if (!isMine && item.senderClientId != null)
+                  _buildActionMenuItem(
+                    emoji: '🛡️',
+                    label: 'Bildir / Engelle',
+                    isDanger: true,
+                    onTap: () {
+                      setState(() => _activeActionMessage = null);
+                      _showReportConfirmModal(
+                        item.senderClientId!,
+                        item.senderName ?? 'Kullanıcı',
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1694,40 +1701,45 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
 
                 // 3. ANA SOHBET AKIŞI
                 Expanded(
-                  child: _baseLat == null || _baseLng == null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const CircularProgressIndicator(color: kBrandBlue),
-                                const SizedBox(height: 14),
-                                Text(
-                                  '100m çevrenizdeki odaya bağlanmak için GPS konumu alınıyor...',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: textSecondary, fontSize: 13.5),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : _activeView == 'dm' && _dmPeerClientId == null
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'Özel mesajlaşmak için odadaki bir kullanıcının ismine dokunun.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: textSecondary, fontSize: 14),
-                                ),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () => FocusScope.of(context).unfocus(),
+                    child: _baseLat == null || _baseLng == null
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const CircularProgressIndicator(color: kBrandBlue),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    '100m çevrenizdeki odaya bağlanmak için GPS konumu alınıyor...',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: textSecondary, fontSize: 13.5),
+                                  ),
+                                ],
                               ),
-                            )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              itemCount: displayItems.length,
-                              itemBuilder: (ctx, idx) {
+                            ),
+                          )
+                        : _activeView == 'dm' && _dmPeerClientId == null
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    'Özel mesajlaşmak için odadaki bir kullanıcının ismine dokunun.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: textSecondary, fontSize: 14),
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: _scrollController,
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                itemCount: displayItems.length,
+                                itemBuilder: (ctx, idx) {
                                 final entry = displayItems[idx];
 
                                 // Gruplanmış ardışık giriş/çıkış sistem mesajları
@@ -2192,6 +2204,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                 );
                               },
                             ),
+                  ),
                 ),
 
                 if (_activeView == 'room' && _activeTypingNames.isNotEmpty)
@@ -2271,7 +2284,6 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               textInputAction: TextInputAction.send,
                               onChanged: _handleInputChanged,
                               onSubmitted: (_) => _handleSendMessage(),
-                              onTapOutside: (_) => _inputFocusNode.unfocus(),
                               decoration: InputDecoration(
                                 hintText: _isBanned
                                     ? 'Bugün susturuldunuz'
@@ -2783,6 +2795,24 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // NOKTA (●) BAĞLAM MENÜSÜ OVERLAY (Navigator FocusScope bozmadan açılır)
+            if (_activeActionMessage != null)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _activeActionMessage = null),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: GestureDetector(
+                      onTap: () {},
+                      child: _buildActionOverlayCard(_activeActionMessage!),
                     ),
                   ),
                 ),
