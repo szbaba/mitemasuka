@@ -1543,6 +1543,33 @@ export class MitemasukaHub {
 }
 
 async function translateViaGoogleGtx(text, sl, tl) {
+  // 1. Hızlı Google Clients5 (dict-chrome-ex) uç noktası
+  try {
+    const cUrl = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${encodeURIComponent(
+      sl
+    )}&tl=${encodeURIComponent(tl)}&q=${encodeURIComponent(text)}`;
+    const cRes = await fetch(cUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+    });
+    if (cRes.ok) {
+      const cData = await cRes.json();
+      if (Array.isArray(cData) && cData.length > 0) {
+        if (Array.isArray(cData[0])) {
+          const tr = String(cData[0][0] || '').trim();
+          const det = String(cData[0][1] || '').toLowerCase();
+          if (tr) return { translated: tr, detectedLang: det };
+        } else if (typeof cData[0] === 'string') {
+          const tr = cData[0].trim();
+          if (tr) return { translated: tr, detectedLang: sl === 'auto' ? '' : sl };
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Yedek: Google GTX single uç noktası
   const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(
     sl
   )}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(text)}`;

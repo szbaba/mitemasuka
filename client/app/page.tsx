@@ -2778,41 +2778,20 @@ export default function MitemasukaPage() {
                   </div>
                 )}
 
-                {/* WhatsApp Tarzı Yüzen (Ekran Ortasında Her Zaman Ulaşılabilir) Emoji + 5'li İşlem Menüsü */}
+                {/* WhatsApp iOS Tarzı Yarı Şeffaf Buzlu Cam (Frosted Glass) + İnce Çizgisel Vektör İkonlu İşlem Menüsü */}
                 {isMenuOpen && (
                   <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-[4px]"
                     onClick={() => setActiveActionMenuId(null)}
                   >
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className={`flex flex-col gap-2 max-w-[90vw] ${
+                      className={`flex flex-col gap-2.5 max-w-[90vw] ${
                         isMine ? 'items-end' : 'items-start'
                       }`}
                     >
-                      {/* Seçilen Mesajın Küçük Önizlemesi */}
-                      <div
-                        className={`max-w-[270px] rounded-2xl px-3.5 py-2 shadow-lg text-sm ${
-                          isMine
-                            ? 'bg-[#1A81E5] text-white'
-                            : 'bg-white dark:bg-neutral-800 text-slate-900 dark:text-neutral-100 border border-slate-200 dark:border-neutral-700'
-                        }`}
-                      >
-                        {!isMine && (
-                          <div
-                            className="text-xs font-bold mb-0.5 truncate"
-                            style={{ color: item.senderColor || '#2563EB' }}
-                          >
-                            {item.senderName}
-                          </div>
-                        )}
-                        <div className="line-clamp-2 break-words font-medium">
-                          {item.text}
-                        </div>
-                      </div>
-
-                      {/* Üst: 6'lı Hızlı Emoji Barı */}
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-900/95 dark:bg-neutral-800/95 text-white shadow-2xl border border-white/15 backdrop-blur-md">
+                      {/* Üst: 6'lı Yarı Şeffaf Buzlu Cam Emoji Barı */}
+                      <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-neutral-900/72 dark:bg-neutral-900/78 text-white shadow-[0_12px_36px_rgba(0,0,0,0.45)] border border-white/15 backdrop-blur-2xl">
                         {['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) => {
                           const myReact = (item.reactions?.[emo] || []).includes(
                             myUsername
@@ -2822,7 +2801,7 @@ export default function MitemasukaPage() {
                               key={emo}
                               type="button"
                               onClick={() => handleReactMessage(item.id, emo)}
-                              className={`w-9 h-9 rounded-full flex items-center justify-center text-xl active:scale-125 hover:scale-125 transition-transform ${
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-[23px] active:scale-125 hover:scale-120 transition-transform ${
                                 myReact ? 'bg-white/20 ring-1 ring-white/40' : ''
                               }`}
                             >
@@ -2832,8 +2811,8 @@ export default function MitemasukaPage() {
                         })}
                       </div>
 
-                      {/* Alt: 5'li İşlem Listesi */}
-                      <div className="w-60 rounded-2xl bg-neutral-900/95 dark:bg-neutral-800/95 text-white shadow-2xl border border-white/15 backdrop-blur-md py-1.5 overflow-hidden text-[13px] font-medium">
+                      {/* Alt: WhatsApp iOS & Corsecure Stili İnce Çizgisel Vektör İkonlu 5'li İşlem Menüsü */}
+                      <div className="w-[236px] rounded-[24px] bg-neutral-900/72 dark:bg-neutral-900/78 text-white shadow-[0_16px_42px_rgba(0,0,0,0.5)] border border-white/15 backdrop-blur-2xl py-2 overflow-hidden text-[15px] font-normal tracking-[-0.01em]">
                         <button
                           type="button"
                           onClick={() => {
@@ -2846,10 +2825,10 @@ export default function MitemasukaPage() {
                             messageInputRef.current?.focus();
                             setTimeout(() => messageInputRef.current?.focus(), 20);
                           }}
-                          className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-white/10 active:bg-white/15 transition text-left"
+                          className="w-full px-4 py-2.5 flex items-center gap-3.5 hover:bg-white/10 active:bg-white/15 transition text-left"
                         >
-                          <span>↩️</span>
-                          <span>Cevapla (Oda içinde yanıtla)</span>
+                          <Reply className="w-[19px] h-[19px] text-white/95 shrink-0" strokeWidth={1.75} />
+                          <span>Cevapla</span>
                         </button>
 
                         {!isMine && item.senderClientId && (
@@ -2859,9 +2838,9 @@ export default function MitemasukaPage() {
                               setActiveActionMenuId(null);
                               openDm(item.senderClientId, item.senderName);
                             }}
-                            className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-white/10 active:bg-white/15 transition text-left"
+                            className="w-full px-4 py-2.5 flex items-center gap-3.5 hover:bg-white/10 active:bg-white/15 transition text-left"
                           >
-                            <span>👤</span>
+                            <MessageSquareLock className="w-[19px] h-[19px] text-white/95 shrink-0" strokeWidth={1.75} />
                             <span>Özel olarak cevapla</span>
                           </button>
                         )}
@@ -2873,14 +2852,14 @@ export default function MitemasukaPage() {
                               setActiveActionMenuId(null);
                               handleToggleOrTranslateMessage(item.id, item.text);
                             }}
-                            className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-white/10 active:bg-white/15 transition text-left"
+                            className="w-full px-4 py-2.5 flex items-center gap-3.5 hover:bg-white/10 active:bg-white/15 transition text-left"
                           >
-                            <span>🌐</span>
+                            <Globe className="w-[19px] h-[19px] text-white/95 shrink-0" strokeWidth={1.75} />
                             <span>
                               {translations[`${item.id}_${uiLang}`] &&
                               !hiddenTranslationIds[`${item.id}_${uiLang}`]
-                                ? 'Orijinali Göster (Çeviriyi gizle)'
-                                : 'Çevir (Mesajı çevirir)'}
+                                ? 'Orijinali göster'
+                                : 'Çevir'}
                             </span>
                           </button>
                         )}
@@ -2888,13 +2867,15 @@ export default function MitemasukaPage() {
                         <button
                           type="button"
                           onClick={() => handleCopyMessageText(item.id, item.text)}
-                          className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-white/10 active:bg-white/15 transition text-left"
+                          className="w-full px-4 py-2.5 flex items-center gap-3.5 hover:bg-white/10 active:bg-white/15 transition text-left"
                         >
-                          <span>📋</span>
+                          {copiedMsgId === item.id ? (
+                            <Check className="w-[19px] h-[19px] text-emerald-400 shrink-0" strokeWidth={1.75} />
+                          ) : (
+                            <Copy className="w-[19px] h-[19px] text-white/95 shrink-0" strokeWidth={1.75} />
+                          )}
                           <span>
-                            {copiedMsgId === item.id
-                              ? 'Kopyalandı ✓'
-                              : 'Kopyala (Metni kopyalar)'}
+                            {copiedMsgId === item.id ? 'Kopyalandı' : 'Kopyala'}
                           </span>
                         </button>
 
@@ -2908,9 +2889,9 @@ export default function MitemasukaPage() {
                                 item.senderName || 'Kullanıcı'
                               );
                             }}
-                            className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-400 transition text-left border-t border-white/10 mt-0.5 pt-2.5"
+                            className="w-full px-4 py-2.5 flex items-center gap-3.5 hover:bg-rose-500/20 active:bg-rose-500/30 text-[#FF6B6B] transition text-left border-t border-white/10 mt-1 pt-2.5"
                           >
-                            <span>🛡️</span>
+                            <ShieldAlert className="w-[19px] h-[19px] text-[#FF6B6B] shrink-0" strokeWidth={1.75} />
                             <span>Bildir / Engelle</span>
                           </button>
                         )}

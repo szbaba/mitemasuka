@@ -43,27 +43,104 @@ export async function translateTextFree(
   // Sadece sayı, emoji veya noktalama ise çevirme
   if (!new RegExp('\\p{L}', 'u').test(clean)) return null;
 
-  try {
-    const fetchGtx = async (tl: string, sl: string = 'auto') => {
+  const fetchWithTimeout = async (url: string, ms = 2500) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      return await fetch(url, { signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const fetchTranslatePair = async (
+    tl: string,
+    sl: string = 'auto'
+  ): Promise<{ translated: string; detectedLang?: string } | null> => {
+    // 1. Hızlı Google Clients5 (IPv6 takılması olmadan 0.1sn yanıt verir)
+    try {
+      const cUrl = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${encodeURIComponent(
+        sl
+      )}&tl=${encodeURIComponent(tl)}&q=${encodeURIComponent(clean)}`;
+      const cRes = await fetchWithTimeout(cUrl, 2200);
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        if (Array.isArray(cData) && cData.length > 0) {
+          if (Array.isArray(cData[0])) {
+            const tr = String(cData[0][0] || '').trim();
+            const det =
+              typeof cData[0][1] === 'string'
+                ? cData[0][1].toLowerCase()
+                : undefined;
+            if (tr) return { translated: tr, detectedLang: det };
+          } else if (typeof cData[0] === 'string') {
+            const tr = cData[0].trim();
+            if (tr)
+              return {
+                translated: tr,
+                detectedLang: sl === 'auto' ? undefined : sl,
+              };
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Yedek: Google GTX single
+    try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(
         sl
       )}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(clean)}`;
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!Array.isArray(data) || !Array.isArray(data[0])) return null;
-      const translated = data[0]
-        .map((part: unknown[]) =>
-          Array.isArray(part) ? String(part[0] || '') : ''
-        )
-        .join('')
-        .trim();
-      const detectedLang =
-        typeof data[2] === 'string' ? data[2].toLowerCase() : undefined;
-      return { translated, detectedLang };
-    };
+      const res = await fetchWithTimeout(url, 2500);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && Array.isArray(data[0])) {
+          const translated = data[0]
+            .map((part: unknown[]) =>
+              Array.isArray(part) ? String(part[0] || '') : ''
+            )
+            .join('')
+            .trim();
+          const detectedLang =
+            typeof data[2] === 'string' ? data[2].toLowerCase() : undefined;
+          if (translated) return { translated, detectedLang };
+        }
+      }
+    } catch {}
 
-    const first = await fetchGtx(targetLang, 'auto');
+    return null;
+  };
+
+  try {
+    // Önce Mitemasuka Worker API köprüsünü (https://ws.mitemasuka.com/api/translate) dene (Cloudflare Edge + Safari ITP/IPv6 tam koruması)
+    try {
+      const apiBase = (
+        process.env.NEXT_PUBLIC_WS_URL || 'wss://ws.mitemasuka.com'
+      )
+        .replace(/^wss:\/\//i, 'https://')
+        .replace(/^ws:\/\//i, 'http://')
+        .replace(/\/$/, '');
+      const apiRes = await fetchWithTimeout(
+        `${apiBase}/api/translate?text=${encodeURIComponent(
+          clean
+        )}&targetLang=${encodeURIComponent(targetLang)}&autoOnly=${
+          forceManual ? 'false' : 'true'
+        }`,
+        2800
+      );
+      if (apiRes.ok) {
+        const apiData = await apiRes.json();
+        const tr = String(apiData?.translatedText || '').trim();
+        const det =
+          typeof apiData?.detectedLang === 'string'
+            ? apiData.detectedLang.toLowerCase()
+            : undefined;
+        if (tr && tr.toLowerCase() !== clean.toLowerCase()) {
+          return { translated: tr, detectedLang: det };
+        }
+      }
+    } catch {}
+
+    const first = await fetchTranslatePair(targetLang, 'auto');
     if (
       first &&
       first.translated &&
@@ -79,7 +156,7 @@ export async function translateTextFree(
 
     if (forceManual) {
       const fallbackLang = targetLang === 'tr' ? 'en' : 'tr';
-      const second = await fetchGtx(fallbackLang, 'auto');
+      const second = await fetchTranslatePair(fallbackLang, 'auto');
       if (
         second &&
         second.translated &&
@@ -88,7 +165,7 @@ export async function translateTextFree(
         return second;
       }
       // Kısa kelimeler için açık dil çifti yedeği
-      const third = await fetchGtx(
+      const third = await fetchTranslatePair(
         targetLang,
         targetLang === 'tr' ? 'en' : 'tr'
       );

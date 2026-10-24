@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show WebSocket;
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -682,10 +684,43 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     String tl, {
     String sl = 'auto',
   }) async {
+    try {
+      final cUri = Uri.parse(
+        'https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${Uri.encodeComponent(sl)}&tl=${Uri.encodeComponent(tl)}&q=${Uri.encodeComponent(clean)}',
+      );
+      final cResp = await http
+          .get(cUri)
+          .timeout(const Duration(milliseconds: 2200));
+      if (cResp.statusCode == 200) {
+        final cDecoded = jsonDecode(cResp.body);
+        if (cDecoded is List && cDecoded.isNotEmpty) {
+          if (cDecoded[0] is List && (cDecoded[0] as List).isNotEmpty) {
+            final tr = ((cDecoded[0] as List)[0] ?? '').toString().trim();
+            final det = (cDecoded[0] as List).length > 1
+                ? ((cDecoded[0] as List)[1] ?? '').toString().toLowerCase()
+                : '';
+            if (tr.isNotEmpty) {
+              return {'translated': tr, 'detectedLang': det};
+            }
+          } else if (cDecoded[0] is String) {
+            final tr = (cDecoded[0] as String).trim();
+            if (tr.isNotEmpty) {
+              return {
+                'translated': tr,
+                'detectedLang': sl == 'auto' ? '' : sl,
+              };
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     final gtxUri = Uri.parse(
       'https://translate.googleapis.com/translate_a/single?client=gtx&sl=${Uri.encodeComponent(sl)}&tl=${Uri.encodeComponent(tl)}&dt=t&q=${Uri.encodeComponent(clean)}',
     );
-    final gtxResp = await http.get(gtxUri);
+    final gtxResp = await http
+        .get(gtxUri)
+        .timeout(const Duration(milliseconds: 2800));
     if (gtxResp.statusCode != 200) return null;
     final decoded = jsonDecode(gtxResp.body);
     if (decoded is! List || decoded.isEmpty || decoded[0] is! List) return null;
@@ -939,141 +974,160 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       crossAxisAlignment:
           isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        // Üst: 6'lı WhatsApp Tarzı Emoji Tepki Barı
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1F1F1F),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) {
-              final myReact =
-                  (item.reactions[emo] ?? []).contains(_myUsername);
-              return GestureDetector(
-                onTap: () {
-                  _emit('react_message', {
-                    'messageId': item.id,
-                    'emoji': emo,
-                  });
-                  setState(() => _activeActionMessage = null);
-                },
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: myReact
-                        ? Colors.white.withValues(alpha: 0.18)
-                        : Colors.transparent,
-                  ),
-                  child: Text(
-                    emo,
-                    style: const TextStyle(fontSize: 22),
-                  ),
+        // Üst: WhatsApp iOS Tarzı Yarı Şeffaf Buzlu Cam (Frosted Glass) Emoji Tepki Barı
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E).withValues(alpha: 0.74),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.14),
                 ),
-              );
-            }).toList(),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.32),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) {
+                  final myReact =
+                      (item.reactions[emo] ?? []).contains(_myUsername);
+                  return GestureDetector(
+                    onTap: () {
+                      _emit('react_message', {
+                        'messageId': item.id,
+                        'emoji': emo,
+                      });
+                      setState(() => _activeActionMessage = null);
+                    },
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: myReact
+                            ? Colors.white.withValues(alpha: 0.20)
+                            : Colors.transparent,
+                      ),
+                      child: Text(
+                        emo,
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 8),
-        // Alt: 5'li İşlem Menüsü
-        Material(
-          color: const Color(0xFF1F1F1F),
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            width: 245,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.38),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+        const SizedBox(height: 10),
+        // Alt: WhatsApp iOS & Corsecure Stili Yarı Şeffaf Buzlu Cam + İnce Çizgisel Vektör İkonlu İşlem Menüsü
+        ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Material(
+              color: const Color(0xFF1C1C1E).withValues(alpha: 0.74),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.14),
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildActionMenuItem(
-                  emoji: '↩️',
-                  label: 'Cevapla (Oda içinde yanıtla)',
-                  onTap: () {
-                    setState(() {
-                      _activeActionMessage = null;
-                      _replyingTo = item;
-                    });
-                    _inputFocusNode.requestFocus();
-                  },
-                ),
-                if (!isMine && item.senderClientId != null)
-                  _buildActionMenuItem(
-                    emoji: '👤',
-                    label: 'Özel olarak cevapla',
-                    onTap: () {
-                      setState(() {
-                        _activeActionMessage = null;
-                        _dmDraftPeer = RoomUser(
-                          id: item.senderId ?? '',
-                          clientId: item.senderClientId!,
-                          username: item.senderName ?? 'User',
-                          color: item.senderColor ?? '#1A81E5',
-                        );
-                        _activeView = 'dm';
-                      });
-                    },
-                  ),
-                if (hasLetters)
-                  _buildActionMenuItem(
-                    emoji: '🌐',
-                    label: _translations.containsKey('${item.id}_$_uiLang')
-                        ? 'Orijinali Göster (Çeviriyi gizle)'
-                        : 'Çevir (Mesajı çevirir)',
-                    onTap: () {
-                      setState(() => _activeActionMessage = null);
-                      _translateMessage(item);
-                    },
-                  ),
-                _buildActionMenuItem(
-                  emoji: '📋',
-                  label: 'Kopyala (Metni kopyalar)',
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: item.text));
-                    setState(() => _activeActionMessage = null);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Mesaj panoya kopyalandı.'),
-                        duration: Duration(seconds: 1),
+              ),
+              child: SizedBox(
+                width: 236,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildActionMenuItem(
+                        icon: CupertinoIcons.arrowshape_turn_up_left,
+                        label: 'Cevapla',
+                        onTap: () {
+                          setState(() {
+                            _activeActionMessage = null;
+                            _replyingTo = item;
+                          });
+                          _inputFocusNode.requestFocus();
+                        },
                       ),
-                    );
-                  },
-                ),
-                if (!isMine && item.senderClientId != null)
-                  _buildActionMenuItem(
-                    emoji: '🛡️',
-                    label: 'Bildir / Engelle',
-                    isDanger: true,
-                    onTap: () {
-                      setState(() => _activeActionMessage = null);
-                      _showReportConfirmModal(
-                        item.senderClientId!,
-                        item.senderName ?? 'Kullanıcı',
-                      );
-                    },
+                      if (!isMine && item.senderClientId != null)
+                        _buildActionMenuItem(
+                          icon: CupertinoIcons.person_crop_circle_badge_plus,
+                          label: 'Özel olarak cevapla',
+                          onTap: () {
+                            setState(() {
+                              _activeActionMessage = null;
+                              _dmDraftPeer = RoomUser(
+                                id: item.senderId ?? '',
+                                clientId: item.senderClientId!,
+                                username: item.senderName ?? 'User',
+                                color: item.senderColor ?? '#1A81E5',
+                              );
+                              _activeView = 'dm';
+                            });
+                          },
+                        ),
+                      if (hasLetters)
+                        _buildActionMenuItem(
+                          icon: CupertinoIcons.globe,
+                          label: _translations.containsKey('${item.id}_$_uiLang')
+                              ? 'Orijinali göster'
+                              : 'Çevir',
+                          onTap: () {
+                            setState(() => _activeActionMessage = null);
+                            _translateMessage(item);
+                          },
+                        ),
+                      _buildActionMenuItem(
+                        icon: CupertinoIcons.doc_on_doc,
+                        label: 'Kopyala',
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: item.text));
+                          setState(() => _activeActionMessage = null);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Mesaj panoya kopyalandı.'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                      ),
+                      if (!isMine && item.senderClientId != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Divider(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        _buildActionMenuItem(
+                          icon: CupertinoIcons.shield,
+                          label: 'Bildir / Engelle',
+                          isDanger: true,
+                          onTap: () {
+                            setState(() => _activeActionMessage = null);
+                            _showReportConfirmModal(
+                              item.senderClientId!,
+                              item.senderName ?? 'Kullanıcı',
+                            );
+                          },
+                        ),
+                      ],
+                    ],
                   ),
-              ],
+                ),
+              ),
             ),
           ),
         ),
@@ -1082,27 +1136,29 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   }
 
   Widget _buildActionMenuItem({
-    required String emoji,
+    required IconData icon,
     required String label,
     required VoidCallback onTap,
     bool isDanger = false,
   }) {
+    final itemColor =
+        isDanger ? const Color(0xFFFF6B6B) : Colors.white.withValues(alpha: 0.96);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         child: Row(
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 15)),
-            const SizedBox(width: 10),
+            Icon(icon, size: 19, color: itemColor),
+            const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: isDanger ? const Color(0xFFF87171) : Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: -0.2,
+                  color: itemColor,
                 ),
               ),
             ),
@@ -1486,7 +1542,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               child: Row(
                                 children: [
                                   const Icon(
-                                    Icons.people_outline,
+                                    CupertinoIcons.person_2,
                                     size: 15,
                                     color: Color(0xFF10B981),
                                   ),
@@ -1543,8 +1599,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   ),
                                   const SizedBox(width: 1),
                                   Icon(
-                                    Icons.keyboard_arrow_down,
-                                    size: 15,
+                                    CupertinoIcons.chevron_down,
+                                    size: 12,
                                     color: textSecondary,
                                   ),
                                 ],
@@ -1565,8 +1621,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                 border: Border.all(color: borderColor),
                               ),
                               child: Icon(
-                                isDark ? Icons.wb_sunny_outlined : Icons.dark_mode_outlined,
-                                size: 17,
+                                isDark ? CupertinoIcons.sun_max : CupertinoIcons.moon,
+                                size: 16,
                                 color: isDark ? Colors.amber : textPrimary,
                               ),
                             ),
@@ -1591,8 +1647,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                 border: Border.all(color: borderColor),
                               ),
                               child: Icon(
-                                _showHamburgerMenu ? Icons.close : Icons.menu,
-                                size: 18,
+                                _showHamburgerMenu ? CupertinoIcons.xmark : CupertinoIcons.line_horizontal_3,
+                                size: 17,
                                 color: textPrimary,
                               ),
                             ),
@@ -2162,7 +2218,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                         ),
                                       if (!isMine && _activeView == 'room')
                                         Padding(
-                                          padding: const EdgeInsets.only(top: 3, left: 6),
+                                          padding: const EdgeInsets.only(top: 4, left: 6),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
@@ -2171,26 +2227,48 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                   setState(() => _replyingTo = item);
                                                   _inputFocusNode.requestFocus();
                                                 },
-                                                child: Text(
-                                                  'Yanıtla',
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: textSecondary,
-                                                  ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      CupertinoIcons.arrowshape_turn_up_left,
+                                                      size: 11.5,
+                                                      color: textSecondary,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'Yanıtla',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: textSecondary,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                               if (hasLetters) ...[
                                                 const SizedBox(width: 12),
                                                 GestureDetector(
                                                   onTap: () => _translateMessage(item),
-                                                  child: Text(
-                                                    translated != null ? 'Orijinal' : 'Çevir',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w500,
-                                                      color: textSecondary,
-                                                    ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        CupertinoIcons.globe,
+                                                        size: 11.5,
+                                                        color: textSecondary,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        translated != null ? 'Orijinal' : 'Çevir',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w500,
+                                                          color: textSecondary,
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                               ],
@@ -2676,7 +2754,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
 
                         ListTile(
                           dense: true,
-                          leading: const Icon(Icons.translate, size: 18, color: Color(0xFF6E9482)),
+                          leading: const Icon(CupertinoIcons.globe, size: 18, color: Color(0xFF6E9482)),
                           title: const Text('Otomatik Çeviri (Ücretsiz)', style: TextStyle(fontSize: 13)),
                           trailing: Text(
                             _autoTranslate ? 'Açık' : 'Kapalı',
@@ -2691,7 +2769,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ListTile(
                           dense: true,
                           leading: Icon(
-                            Icons.info_outline,
+                            CupertinoIcons.info_circle,
                             size: 18,
                             color: isDark ? kBrandBlueDarkText : kBrandBlue,
                           ),
@@ -2703,7 +2781,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ),
                         ListTile(
                           dense: true,
-                          leading: const Icon(Icons.qr_code, size: 18, color: Color(0xFF6E9482)),
+                          leading: const Icon(CupertinoIcons.qrcode, size: 18, color: Color(0xFF6E9482)),
                           title: const Text('Yakınındakini Ekle (QR Kod)', style: TextStyle(fontSize: 13)),
                           onTap: () {
                             setState(() => _showHamburgerMenu = false);
@@ -2713,7 +2791,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ListTile(
                           dense: true,
                           leading: Icon(
-                            Icons.edit_outlined,
+                            CupertinoIcons.pencil,
                             size: 18,
                             color: isDark ? kBrandBlueDarkText : kBrandBlue,
                           ),
@@ -2730,7 +2808,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ListTile(
                           dense: true,
                           leading: const Icon(
-                            Icons.visibility_off_outlined,
+                            CupertinoIcons.eye_slash,
                             size: 18,
                             color: Color(0xFF8C7DA8),
                           ),
@@ -2765,7 +2843,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                 onTap: () => launchUrl(Uri.parse('mailto:info@mitemasuka.com')),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.mail_outline, size: 15, color: textSecondary),
+                                    Icon(CupertinoIcons.mail, size: 15, color: textSecondary),
                                     const SizedBox(width: 6),
                                     Text(
                                       'info@mitemasuka.com',
@@ -2775,7 +2853,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                 ),
                               ),
                               IconButton(
-                                icon: Icon(Icons.copy, size: 15, color: textSecondary),
+                                icon: Icon(CupertinoIcons.doc_on_doc, size: 15, color: textSecondary),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                                 onPressed: () {
