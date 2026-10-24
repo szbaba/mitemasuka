@@ -523,11 +523,16 @@ export class MitemasukaHub {
     });
   }
 
-  assignUserToLocationRoom(user, lat, lng, requestedRadius) {
+  assignUserToLocationRoom(user, lat, lng, requestedRadius, requestedVenueId = null) {
     const allowedRadii = [100, 500, 1000, 5000];
     let targetRadius = allowedRadii.includes(Number(requestedRadius))
       ? Number(requestedRadius)
       : 100;
+
+    const cleanVenueId =
+      requestedVenueId && typeof requestedVenueId === 'string'
+        ? requestedVenueId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || null
+        : null;
 
     if (targetRadius > 100 && !user.isPlus) {
       targetRadius = 100;
@@ -545,6 +550,7 @@ export class MitemasukaHub {
     user.lat = lat;
     user.lng = lng;
     user.radius = targetRadius;
+    user.venueId = cleanVenueId;
 
     // Kullanıcının son bilinen konumunu güncelle ve kaydet
     const prof = this.getOrCreateProfile(user.clientId);
@@ -555,7 +561,7 @@ export class MitemasukaHub {
     this.persistKnownDevices();
 
     // Kullanıcı ilk kez konuma bağlandığında 100m çevredeki kapalı cihazlara Web Push gönder
-    if (!wasInRoom && !user.ghostMode) {
+    if (!wasInRoom && !user.ghostMode && !cleanVenueId) {
       this.notifyOfflineNearbyUsers(user, lat, lng);
     }
 
@@ -573,6 +579,7 @@ export class MitemasukaHub {
 
       if (
         currentRoom.radius === targetRadius &&
+        (currentRoom.venueId || null) === cleanVenueId &&
         distToCurrentRoom <= targetRadius
       ) {
         this.broadcastRoomUsers(user.roomId);
@@ -615,7 +622,8 @@ export class MitemasukaHub {
         otherUser.lat !== null &&
         otherUser.lng !== null &&
         otherUser.roomId &&
-        otherUser.radius === targetRadius
+        otherUser.radius === targetRadius &&
+        (otherUser.venueId || null) === cleanVenueId
       ) {
         const distance = calculateDistanceMeters(
           lat,
@@ -632,11 +640,13 @@ export class MitemasukaHub {
     }
 
     if (!matchedRoomId) {
-      matchedRoomId = `room_${targetRadius}m_${Date.now()}_${Math.random()
+      const venuePrefix = cleanVenueId ? `venue_${cleanVenueId}_` : '';
+      matchedRoomId = `room_${venuePrefix}${targetRadius}m_${Date.now()}_${Math.random()
         .toString(36)
         .substring(2, 6)}`;
       this.rooms.set(matchedRoomId, {
         id: matchedRoomId,
+        venueId: cleanVenueId,
         centerLat: lat,
         centerLng: lng,
         radius: targetRadius,
@@ -653,6 +663,7 @@ export class MitemasukaHub {
 
     this.sendEvent(user.ws, 'joined_room', {
       roomId: matchedRoomId,
+      venueId: cleanVenueId,
       radius: targetRadius,
       username: user.username,
       userId: user.id,
@@ -701,7 +712,13 @@ export class MitemasukaHub {
       ) {
         return;
       }
-      this.assignUserToLocationRoom(user, data.lat, data.lng, data.radius || 100);
+      this.assignUserToLocationRoom(
+        user,
+        data.lat,
+        data.lng,
+        data.radius || 100,
+        data.venueId || null
+      );
       return;
     }
 
