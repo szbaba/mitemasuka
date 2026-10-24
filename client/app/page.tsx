@@ -2792,7 +2792,7 @@ export default function MitemasukaPage() {
                     >
                       {/* Üst: 6'lı Yarı Şeffaf Buzlu Cam Emoji Barı */}
                       <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-neutral-900/72 dark:bg-neutral-900/78 text-white shadow-[0_12px_36px_rgba(0,0,0,0.45)] border border-white/15 backdrop-blur-2xl">
-                        {['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) => {
+                        {['❤️', '👍', '🔥', '😂', '😮', '👏'].map((emo) => {
                           const myReact = (item.reactions?.[emo] || []).includes(
                             myUsername
                           );

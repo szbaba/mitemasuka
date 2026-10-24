@@ -997,7 +997,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
-                children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emo) {
+                children: ['❤️', '👍', '🔥', '😂', '😮', '👏'].map((emo) {
                   final myReact =
                       (item.reactions[emo] ?? []).contains(_myUsername);
                   return GestureDetector(
@@ -1463,7 +1463,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                     padding: const EdgeInsets.all(3),
                                     child: ClipOval(
                                       child: Image.asset(
-                                        'assets/logo-karga.png',
+                                        'assets/icon-512.png',
                                         fit: BoxFit.contain,
                                       ),
                                     ),
