@@ -15,6 +15,25 @@ const WAKE_PUSH_COOLDOWN_MS = 60 * 1000;
 // Çevrede uygulama yüklü sayımı için maksimum son görülme süresi (30 gün)
 const KNOWN_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+// Mitemasuka Protokolü (Public & Partner API) Geçerli Anahtarları
+const DEFAULT_PROTOCOL_API_KEYS = new Set([
+  'mk_live_ios_protocol_2026_v1', // iosApili resmi protokol anahtarı
+  'mk_public_demo_key_v1', // Dış geliştirici test anahtarı
+]);
+
+function isValidProtocolApiKey(request, url, env) {
+  const headerKey = request.headers.get('X-Mitemasuka-Key') || '';
+  const queryKey = url.searchParams.get('apiKey') || '';
+  const providedKey = (headerKey || queryKey).trim();
+  if (!providedKey) return false;
+  if (DEFAULT_PROTOCOL_API_KEYS.has(providedKey)) return true;
+  if (env && typeof env.MITEMASUKA_API_KEYS === 'string') {
+    const extraKeys = env.MITEMASUKA_API_KEYS.split(',').map((k) => k.trim());
+    if (extraKeys.includes(providedKey)) return true;
+  }
+  return false;
+}
+
 const VAPID_PUBLIC_KEY =
   'BMZfazNz6u-QkK7DBuhuQACka3JeQXUB2yirba0Pk0fgh_UnlqSxi1GqGdsN3HwbEhknQaoaUQG0OJ5lSRHoMMA';
 const VAPID_PRIVATE_JWK = {
@@ -1304,6 +1323,104 @@ export class MitemasukaHub {
           'Cache-Control': 'no-store',
         },
       });
+    }
+
+    // 🌐 MİTEMASUKA PROTOKOLÜ (API v1) — Yapılandırma & Durum Uç Noktası
+    if (url.pathname === '/api/v1/protocol/config') {
+      if (!isValidProtocolApiKey(request, url, this.env)) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized: Invalid X-Mitemasuka-Key' }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          protocol: 'Mitemasuka Protocol v1',
+          status: 'ok',
+          allowedRadii: [100, 500, 1000, 5000],
+          freeDailyMessageLimit: FREE_DAILY_MESSAGE_LIMIT,
+          activeUsers: this.users.size,
+          activeRooms: this.rooms.size,
+          activeChannels: this.channels.size,
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+
+    // 🛡️ MİTEMASUKA PROTOKOLÜ (API v1) — REST Kullanıcı Bildirme (UGC Report)
+    if (url.pathname === '/api/v1/protocol/report' && request.method === 'POST') {
+      if (!isValidProtocolApiKey(request, url, this.env)) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized: Invalid X-Mitemasuka-Key' }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        );
+      }
+      try {
+        const body = await request.json();
+        const reporterId = String(body?.reporterClientId || '');
+        const targetId = String(body?.targetClientId || '');
+        if (reporterId && targetId && reporterId !== targetId) {
+          const targetProf = this.profiles.get(targetId);
+          if (targetProf) {
+            targetProf.reportedBy.add(reporterId);
+            if (
+              targetProf.reportedBy.size >= REPORT_BAN_THRESHOLD &&
+              !targetProf.isBanned
+            ) {
+              targetProf.isBanned = true;
+              targetProf.banDay = getTodayKey();
+              this.persistKnownDevices();
+            }
+          }
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: 'Bad Request' }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+    }
+
+    // 🔌 MİTEMASUKA PROTOKOLÜ (API v1) — WebSocket Bağlantı Doğrulaması
+    if (url.pathname === '/api/v1/protocol/connect') {
+      if (!isValidProtocolApiKey(request, url, this.env)) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized: Invalid X-Mitemasuka-Key' }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
+        );
+      }
     }
 
     if (request.headers.get('Upgrade') !== 'websocket') {

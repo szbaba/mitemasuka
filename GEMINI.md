@@ -25,3 +25,12 @@ Kullanıcının eski Apple Developer hesabı kapatıldığı (terminated) için,
    - App Store Connect'te kullanılacak **Destek E-postası, Telefon Numarası, Kredi Kartı ve Banka Hesabı (IBAN)** tamamen yakınına ait olacak; eski hesapta kullanılmış hiçbir iletişim veya ödeme bilgisi girilmeyecek.
 5. **IP ve Tarayıcı İzolasyonu:**
    - Yakını App Store Connect paneline kendi cihazından ve kendi internetinden (veya mobil verisinden) girecek; bu bilgisayardaki tarayıcılardan App Store Connect'e giriş yapılmayacak.
+
+## 4. Yedekler (Backups) ve 4 Adımlı `iosApili` Stratejisi
+- **API Öncesi Tam Yedek:** API ve `iosApili` çalışmalarına başlamadan önceki çalışan son halin tam yedeği `/Users/suleymanzeyyatbaba/minitemas (API öncesi).zip` konumunda bulunmaktadır. Herhangi bir geri dönüş (rollback) ihtiyacında bu arşiv referans alınacaktır.
+- **4 Adımlı `iosApili` ve Mitemasuka Protokolü Planı:**
+  1. `worker/index.js` üzerinde mevcut Web ve Android bağlantısını hiç bozmadan, dış istemciler için izole bir API kapısı (`/api/v1/protocol/...`) hazırlanacak.
+  2. Mevcut `mobile/` klasörüne dokunulmadan, yanına yalnızca iOS ve yeni API üzerinden çalışan bağımsız **`iosApili/`** klasörü oluşturulacak.
+  3. `iosApili/` klasörü "Mitemasuka" adıyla App Store'a yüklenmek üzere yakınımıza teslim edilecek (kendi ortamından derleyip yükleyecek).
+  4. Orijinal `mobile/` (ve içerisindeki orijinal iOS) klasörü ana projeyle birlikte gelişmeye devam edecek; istendiğinde yeni özellikler `iosApili/` paketine aktarılıp yeni sürüm olarak yakınımıza verilecek.
+
