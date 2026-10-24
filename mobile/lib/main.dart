@@ -13,6 +13,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'i18n_strings.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MitemasukaApp());
@@ -203,7 +205,6 @@ class MitemasukaHomePage extends StatefulWidget {
 
 class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   static const String _wsBaseUrl = 'wss://ws.mitemasuka.com';
-  static const String _httpBaseUrl = 'https://ws.mitemasuka.com';
 
   String _myClientId = '';
   String _myId = '';
@@ -261,6 +262,25 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   final Map<String, String> _typingUsers = {};
   final Map<String, Timer> _remoteTypingTimers = {};
   Timer? _myTypingDebounce;
+  List<Map<String, dynamic>> _nearbyChannels = [];
+  Map<String, dynamic>? _activeChannel;
+
+  String _t(String key) => trText(_uiLang, key);
+
+  void _playNotifSound() {
+    HapticFeedback.lightImpact();
+    SystemSound.play(SystemSoundType.click);
+  }
+
+  void _triggerAutoTranslateForAll() {
+    for (final m in [..._messages, ..._whispers]) {
+      if (m.kind == 'chat' &&
+          m.senderClientId != _myClientId &&
+          RegExp(r'\p{L}', unicode: true).hasMatch(m.text)) {
+        _translateMessage(m, forceManual: false);
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -542,13 +562,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           }
         });
         if (_autoTranslate) {
-          for (final m in _messages) {
-            if (m.kind == 'chat' &&
-                m.senderClientId != _myClientId &&
-                RegExp(r'\p{L}', unicode: true).hasMatch(m.text)) {
-              _translateMessage(m, forceManual: false);
-            }
-          }
+          _triggerAutoTranslateForAll();
         }
         _scrollToBottom();
       } else if (event == 'room_users' && data is Map<String, dynamic>) {
@@ -575,13 +589,23 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           }
         });
       } else if (event == 'system_message' && data is Map<String, dynamic>) {
+        final sysMsg = ChatMessage.fromJson(data, kind: 'system');
         setState(() {
-          _messages.add(ChatMessage.fromJson(data, kind: 'system'));
+          _messages.add(sysMsg);
         });
+        if (_presenceNotifEnabled &&
+            (sysMsg.systemType == 'join' || sysMsg.systemType == 'leave')) {
+          _playNotifSound();
+        }
         _scrollToBottom();
       } else if (event == 'chat_message' && data is Map<String, dynamic>) {
         final msg = ChatMessage.fromJson(data);
         final isDm = msg.whisperToClientId != null && msg.whisperToClientId!.isNotEmpty;
+        final isFromOther =
+            msg.senderClientId != _myClientId && msg.senderId != _myId;
+        final isBlocked =
+            msg.senderClientId != null &&
+            _blockedClientIds.contains(msg.senderClientId);
         setState(() {
           if (msg.senderId != null) {
             _typingUsers.remove(msg.senderId);
@@ -600,6 +624,13 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             }
           }
         });
+        if (isFromOther && !isBlocked) {
+          if (isDm && _whisperNotifEnabled) {
+            _playNotifSound();
+          } else if (!isDm && _roomNotifEnabled) {
+            _playNotifSound();
+          }
+        }
         if (_autoTranslate &&
             msg.senderClientId != _myClientId &&
             RegExp(r'\p{L}', unicode: true).hasMatch(msg.text)) {
@@ -676,6 +707,53 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           } else {
             _whispers = [];
             _unreadDmCount = 0;
+          }
+        });
+        if (_autoTranslate && _whispers.isNotEmpty) {
+          _triggerAutoTranslateForAll();
+        }
+      } else if (event == 'nearby_channels' && data is List) {
+        final channels = data.whereType<Map<String, dynamic>>().toList();
+        setState(() {
+          _nearbyChannels = channels;
+          if (_activeChannel != null) {
+            final cid = _activeChannel!['id']?.toString();
+            final updated = channels.where((c) => c['id']?.toString() == cid).toList();
+            if (updated.isNotEmpty) {
+              _activeChannel = updated.first;
+            }
+          }
+        });
+      } else if (event == 'channel_created' && data is Map<String, dynamic>) {
+        setState(() {
+          _nearbyChannels.removeWhere((c) => c['id'] == data['id']);
+          _nearbyChannels.insert(0, data);
+          _activeChannel = data;
+        });
+        if ((data['hostClientId'] == _myClientId ||
+                data['creatorClientId'] == _myClientId) &&
+            mounted) {
+          _showLiveChannelDialog(data);
+        }
+      } else if (event == 'channel_updated' && data is Map<String, dynamic>) {
+        setState(() {
+          final idx = _nearbyChannels.indexWhere((c) => c['id'] == data['id']);
+          if (idx >= 0) {
+            _nearbyChannels[idx] = data;
+          } else {
+            _nearbyChannels.insert(0, data);
+          }
+          if (_activeChannel != null && _activeChannel!['id'] == data['id']) {
+            _activeChannel = data;
+          }
+        });
+      } else if (event == 'channel_closed' && data is Map<String, dynamic>) {
+        final closedId = (data['channelId'] ?? data['id'])?.toString();
+        setState(() {
+          _nearbyChannels.removeWhere((c) => c['id']?.toString() == closedId);
+          if (_activeChannel != null &&
+              _activeChannel!['id']?.toString() == closedId) {
+            _activeChannel = null;
           }
         });
       }
@@ -1272,7 +1350,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                     children: [
                       _buildActionMenuItem(
                         icon: CupertinoIcons.arrowshape_turn_up_left,
-                        label: 'Cevapla',
+                        label: _t('reply'),
                         onTap: () {
                           setState(() {
                             _activeActionMessage = null;
@@ -1284,7 +1362,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                       if (!isMine && item.senderClientId != null)
                         _buildActionMenuItem(
                           icon: CupertinoIcons.person_crop_circle_badge_plus,
-                          label: 'Özel olarak cevapla',
+                          label: _t('privateReply'),
                           onTap: () {
                             setState(() {
                               _activeActionMessage = null;
@@ -1302,8 +1380,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         _buildActionMenuItem(
                           icon: CupertinoIcons.globe,
                           label: _translations.containsKey('${item.id}_$_uiLang')
-                              ? 'Orijinali göster'
-                              : 'Çevir',
+                              ? _t('original')
+                              : _t('translate'),
                           onTap: () {
                             setState(() => _activeActionMessage = null);
                             _translateMessage(item);
@@ -1311,14 +1389,14 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ),
                       _buildActionMenuItem(
                         icon: CupertinoIcons.doc_on_doc,
-                        label: 'Kopyala',
+                        label: _t('copyBtn'),
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: item.text));
                           setState(() => _activeActionMessage = null);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Mesaj panoya kopyalandı.'),
-                              duration: Duration(seconds: 1),
+                            SnackBar(
+                              content: Text(_t('copiedBtn')),
+                              duration: const Duration(seconds: 1),
                             ),
                           );
                         },
@@ -1333,13 +1411,13 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         ),
                         _buildActionMenuItem(
                           icon: CupertinoIcons.shield,
-                          label: 'Bildir / Engelle',
+                          label: _t('reportAndBlockMenu'),
                           isDanger: true,
                           onTap: () {
                             setState(() => _activeActionMessage = null);
                             _showReportConfirmModal(
                               item.senderClientId!,
-                              item.senderName ?? 'Kullanıcı',
+                              item.senderName ?? 'User',
                             );
                           },
                         ),
@@ -1399,20 +1477,20 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '$targetName — Kullanıcıyı Bildir',
+                _t('reportModalTitle').replaceAll('{name}', targetName),
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
           ],
         ),
-        content: const Text(
-          'Bu kişiyi topluluk kurallarını ihlal ettiği için bildiriyorsunuz. Odada 3 farklı kişi bildirirse kullanıcı o gün boyunca otomatik olarak susturulur.',
-          style: TextStyle(fontSize: 13.5, height: 1.4),
+        content: Text(
+          _t('reportModalDesc'),
+          style: const TextStyle(fontSize: 13.5, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('İptal'),
+            child: Text(_t('dmCancelBtn')),
           ),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
@@ -1423,15 +1501,17 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               _emit('report_user', {'targetClientId': targetClientId});
               Navigator.of(ctx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$targetName bildirildi.')),
+                SnackBar(content: Text(_t('reportSuccessText'))),
               );
             },
-            child: const Text('Bildir'),
+            child: Text(_t('reportConfirmBtn')),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kCrimsonRed),
             onPressed: () async {
               final nav = Navigator.of(ctx);
+              final messenger = ScaffoldMessenger.of(context);
+              final msgText = _t('reportSuccessText');
               _emit('report_user', {'targetClientId': targetClientId});
               setState(() {
                 _blockedClientIds.add(targetClientId);
@@ -1442,8 +1522,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 _blockedClientIds.toList(),
               );
               nav.pop();
+              messenger.showSnackBar(SnackBar(content: Text(msgText)));
             },
-            child: const Text('Bildir ve Engelle'),
+            child: Text(_t('reportAndBlockBtn')),
           ),
         ],
       ),
@@ -1455,10 +1536,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          'Yakınındakini Ekle (QR Kod)',
+        title: Text(
+          _t('addNearbyQr'),
           textAlign: TextAlign.center,
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1475,17 +1556,17 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Çevrendeki kişiler kamerasıyla okutup indirmeden anında aynı 100m odasına katılabilir.',
+            Text(
+              _t('addNearbyQrSub'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12.5),
+              style: const TextStyle(fontSize: 12.5),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Kapat'),
+            child: Text(_t('closeBtn')),
           ),
         ],
       ),
@@ -1493,29 +1574,113 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
   }
 
   void _showStoryDialog() {
+    String storyLang =
+        (_uiLang == 'tr' || _uiLang == 'ja' || _uiLang == 'en') ? _uiLang : 'en';
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          '見てますか? • Mitemasuka Nedir?',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-        ),
-        content: const SingleChildScrollView(
-          child: Text(
-            'Aynı Mekandayız, Ama Birbirimizi Görüyor Muyuz?\n\n'
-            'Japoncada "Mitemasu ka?" (見てますか?), "Beni görüyor musun? / Etrafına bakıyor musun?" anlamına gelir.\n\n'
-            '• 100 Metre Gerçeklik Çemberi: Sadece fiziksel olarak seninle aynı 100 metrede bulunan kişileri tek bir canlı sohbet odasında buluşturur.\n'
-            '• Web ve Mobil Aynı Odada: Uygulamadan veya mitemasuka.com üzerinden giren herkes aynı odada anında yazışır.',
-            style: TextStyle(fontSize: 13.5, height: 1.45),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Tamam'),
-          ),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          String titleText;
+          String bodyText;
+          if (storyLang == 'tr') {
+            titleText = '見てますか? • Mitemasuka Nedir?';
+            bodyText =
+                'Aynı Mekandayız, Ama Birbirimizi Görüyor Muyuz?\n\n'
+                'Japoncada "Mitemasu ka?" (見てますか?), "Beni görüyor musun? / Etrafına bakıyor musun?" anlamına gelir.\n\n'
+                '• 100 Metre Gerçeklik Çemberi: Sadece fiziksel olarak seninle aynı 100 metrede bulunan kişileri tek bir canlı sohbet odasında buluşturur.\n'
+                '• Web ve Mobil Aynı Odada: Uygulamadan veya mitemasuka.com üzerinden giren herkes aynı odada anında yazışır.\n'
+                '• Anlık ve Geçici: Odadan çıktığında iz kalmaz, geçmiş mesajlar depolanmaz.';
+          } else if (storyLang == 'ja') {
+            titleText = '見てますか？ • Mitemasukaとは？';
+            bodyText =
+                '同じ場所にいるのに、お互いが見えていますか？\n\n'
+                '日本語の「見てますか？」は、すぐ隣にいる人や周囲の空気への気づきを意味します。\n\n'
+                '• 半径100mのリアル空間: いま同じ100メートル圏内にいる人だけを1つのライブチャットルームにつなぎます。\n'
+                '• Webとアプリが同じルームに: アプリからも mitemasuka.com からも同じルームで即座に会話できます。\n'
+                '• 一期一会の会話: アカウント登録不要で、その場限りの自然な交流が生まれます。';
+          } else {
+            titleText = '見てますか? • What is Mitemasuka?';
+            bodyText =
+                'We Are in the Same Place, But Do We Really See Each Other?\n\n'
+                'In Japanese, "Mitemasu ka?" (見てますか?) means "Do you see me? / Are you looking around you?"\n\n'
+                '• 100-Meter Reality Circle: Connects only the people physically within 100 meters of you in a single live room.\n'
+                '• Web & Mobile Together: Anyone joining via the app or mitemasuka.com chats in the exact same room in real time.\n'
+                '• Ephemeral & Account-Free: No sign-up required; conversations happen in the moment.';
+          }
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        titleText,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final l in const [
+                          {'c': 'tr', 't': 'TR'},
+                          {'c': 'en', 't': 'EN'},
+                          {'c': 'ja', 't': 'JP'},
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: GestureDetector(
+                              onTap: () =>
+                                  setModalState(() => storyLang = l['c']!),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: storyLang == l['c']
+                                      ? kBrandBlue
+                                      : Colors.grey.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  l['t']!,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: storyLang == l['c']
+                                        ? Colors.white
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Text(
+                bodyText,
+                style: const TextStyle(fontSize: 13.5, height: 1.45),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(_t('closeBtn')),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1525,22 +1690,23 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          'Mitemasuka Plus (Şimdilik Ücretsiz)',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        title: Text(
+          '${_t('upgradeToPlus')} (${_t('freeForNow')})',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
-        content: const Text(
-          'Lansman döneminde tüm Plus özellikleri ücretsizdir:\n\n'
-          '• 500 m ve 1 km geniş menzil seçimi\n'
-          '• Sınırsız günlük mesaj hakkı\n'
-          '• Özel takma ad (Nickname) belirleme\n'
-          '• Hayalet Modu (Sessiz giriş/çıkış)',
-          style: TextStyle(fontSize: 13.5, height: 1.45),
+        content: Text(
+          '${_t('plusModalSub')}:\n\n'
+          '• ${_t('plusFeat1')}\n'
+          '• ${_t('plusFeat2')}\n'
+          '• ${_t('plusFeat3')}\n'
+          '• ${_t('plusFeat4')}\n\n'
+          '${_t('plusFreePromo')}.',
+          style: const TextStyle(fontSize: 13.5, height: 1.45),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Kapat'),
+            child: Text(_t('closeBtn')),
           ),
           if (!_isPlus)
             FilledButton(
@@ -1549,7 +1715,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 _emit('activate_plus');
                 Navigator.of(ctx).pop();
               },
-              child: const Text('Ücretsiz Plus Aktif Et'),
+              child: Text(_t('activateFreeBtn')),
             ),
         ],
       ),
@@ -1562,22 +1728,22 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          'Takma Adımı Değiştir',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        title: Text(
+          _t('changeMyNickname'),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
         ),
         content: TextField(
           controller: ctrl,
           maxLength: 20,
-          decoration: const InputDecoration(
-            hintText: 'Yeni takma adınız...',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: _t('changeMyNickname'),
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('İptal'),
+            child: Text(_t('dmCancelBtn')),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kBrandBlue),
@@ -1588,7 +1754,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
               }
               Navigator.of(ctx).pop();
             },
-            child: const Text('Kaydet'),
+            child: Text(_t('saveBtn')),
           ),
         ],
       ),
@@ -1637,14 +1803,14 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           final blockedList = _blockedClientIds.toList();
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            title: const Row(
+            title: Row(
               children: [
-                Icon(CupertinoIcons.shield, color: kCrimsonRed, size: 20),
-                SizedBox(width: 8),
+                const Icon(CupertinoIcons.shield, color: kCrimsonRed, size: 20),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Kurallar & Engellenenler',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
+                    _t('rulesAndBlocked'),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
                   ),
                 ),
               ],
@@ -1656,24 +1822,22 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      '• Küfür, hakaret, taciz, nefret söylemi ve spam kesinlikle yasaktır.\n'
-                      '• Her mesajın yanındaki menüden kullanıcıyı bildirebilir veya engelleyebilirsiniz.\n'
-                      '• Odada 3 farklı kişi tarafından bildirilen kullanıcı o gün boyunca otomatik olarak susturulur.',
-                      style: TextStyle(fontSize: 13, height: 1.45),
+                    Text(
+                      _t('reportModalDesc'),
+                      style: const TextStyle(fontSize: 13, height: 1.45),
                     ),
                     const SizedBox(height: 14),
                     const Divider(),
                     const SizedBox(height: 6),
                     Text(
-                      'Engellenen Kullanıcılar (${blockedList.length})',
+                      '${_t('blockedUsers')} (${blockedList.length})',
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                     ),
                     const SizedBox(height: 8),
                     if (blockedList.isEmpty)
-                      const Text(
-                        'Henüz engellediğiniz bir kullanıcı bulunmuyor.',
-                        style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                      Text(
+                        _t('noBlockedUsers'),
+                        style: const TextStyle(fontSize: 12.5, color: Colors.grey),
                       )
                     else
                       ...blockedList.map((cid) {
@@ -1711,9 +1875,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                     _blockedClientIds.toList(),
                                   );
                                 },
-                                child: const Text(
-                                  'Engeli Kaldır',
-                                  style: TextStyle(
+                                child: Text(
+                                  _t('unblockBtn'),
+                                  style: const TextStyle(
                                     fontSize: 12,
                                     color: kCrimsonRed,
                                     fontWeight: FontWeight.bold,
@@ -1734,12 +1898,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   Navigator.of(ctx).pop();
                   _showLegalDialog('privacy');
                 },
-                child: const Text('Gizlilik & Şartlar', style: TextStyle(fontSize: 12.5)),
+                child: Text(_t('privacyPolicy'), style: const TextStyle(fontSize: 12.5)),
               ),
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: kBrandBlue),
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Kapat'),
+                child: Text(_t('closeBtn')),
               ),
             ],
           );
@@ -1753,10 +1917,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     String selectedPlanId = 'class_100m';
     int selectedPlanRadius = 100;
     final plans = [
-      {'id': 'class_100m', 'radius': 100, 'range': '100 m Çap', 'title': 'Sınıf / Tur Rehberi', 'price': '99 ₺'},
-      {'id': 'guide_500m', 'radius': 500, 'range': '500 m Çap', 'title': 'Seminer / Kampüs', 'price': '199 ₺'},
-      {'id': 'concert_1km', 'radius': 1000, 'range': '1 km Çap', 'title': 'Konser / Konferans', 'price': '499 ₺'},
-      {'id': 'rally_5km', 'radius': 5000, 'range': '5 km Çap', 'title': 'Miting / Festival', 'price': '1.499 ₺'},
+      {'id': 'class_100m', 'radius': 100, 'range': '100 m', 'title': '100m'},
+      {'id': 'guide_500m', 'radius': 500, 'range': '500 m', 'title': '500m'},
+      {'id': 'concert_1km', 'radius': 1000, 'range': '1 km', 'title': '1 km'},
+      {'id': 'rally_5km', 'radius': 5000, 'range': '5 km', 'title': '5 km'},
     ];
 
     showDialog(
@@ -1764,14 +1928,14 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(CupertinoIcons.speaker_2, color: kCrimsonRed, size: 20),
-              SizedBox(width: 8),
+              const Icon(CupertinoIcons.speaker_2, color: kCrimsonRed, size: 20),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Canlı Anons Kanalı Kur',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
+                  _t('createChannelMenu'),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ),
             ],
@@ -1783,18 +1947,18 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Konser, konferans, derslik veya tur gezisinde çevrenizdeki herkese tek yönlü canlı duyuru gönderin.',
-                    style: TextStyle(fontSize: 12.5, height: 1.4),
+                  Text(
+                    _t('oneWayChannelNotice'),
+                    style: const TextStyle(fontSize: 12.5, height: 1.4),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: titleCtrl,
                     maxLength: 50,
-                    decoration: const InputDecoration(
-                      labelText: 'Kanal Başlığı',
-                      hintText: 'Örn: Ana Sahne Canlı Altyazı...',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: _t('writtenAnnouncement'),
+                      hintText: _t('broadcastInputPlaceholder'),
+                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                   ),
@@ -1810,7 +1974,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           selectedPlanRadius = p['radius'] as int;
                         }),
                         child: Container(
-                          width: 122,
+                          width: 118,
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: active
@@ -1826,21 +1990,15 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               Text(
                                 p['range'] as String,
                                 style: const TextStyle(
-                                  fontSize: 10.5,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: kCrimsonRed,
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                p['title'] as String,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 2),
-                              const Text(
-                                'Ücretsiz',
-                                style: TextStyle(
+                                _t('freeLabel'),
+                                style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF10B981),
@@ -1859,7 +2017,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('İptal'),
+              child: Text(_t('dmCancelBtn')),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: kCrimsonRed),
@@ -1874,15 +2032,200 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   'plan': selectedPlanId,
                 });
                 Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('"$title" canlı kanalı başlatıldı.')),
-                );
               },
-              child: const Text('Ücretsiz Yayını Başlat'),
+              child: Text(_t('activateFreeBtn')),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showLiveChannelDialog(Map<String, dynamic> initialChannel) {
+    final msgCtrl = TextEditingController();
+    final channelId = initialChannel['id']?.toString() ?? '';
+    _emit('join_channel', {'channelId': channelId});
+    setState(() {
+      _activeChannel = initialChannel;
+    });
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final ch = _activeChannel ?? initialChannel;
+          final isHost = ch['hostClientId'] == _myClientId ||
+              ch['creatorClientId'] == _myClientId ||
+              ch['hostId'] == _myId;
+          final announcements =
+              (ch['messages'] is List) ? (ch['messages'] as List) : [];
+          final reactions =
+              (ch['reactions'] is Map) ? (ch['reactions'] as Map) : {};
+          final listenerCount = ch['listenerCount'] ?? 1;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: kCrimsonRed,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${_t('liveChannelBadge')} • ${ch['radius'] ?? 100}m',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '$listenerCount ${_t('listeners')}',
+                      style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  (ch['title'] ?? '').toString(),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '${_t('speaker')} ${ch['hostName'] ?? ch['creatorName'] ?? ''}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 290,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: announcements.isEmpty
+                        ? Center(
+                            child: Text(
+                              _t('oneWayChannelNotice'),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 12.5, color: Colors.grey),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: announcements.length,
+                            itemBuilder: (ctx, i) {
+                              final a = announcements[i];
+                              final txt = (a is Map ? a['text'] : a).toString();
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: kCrimsonRed.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  txt,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: ['👏', '🔥', '❤️', '🎉'].map((emo) {
+                      final cnt = reactions[emo] ?? 0;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                          ),
+                          onPressed: () {
+                            _emit('react_channel', {
+                              'channelId': channelId,
+                              'emoji': emo,
+                            });
+                            setModalState(() {});
+                          },
+                          child: Text('$emo ${cnt > 0 ? cnt : ''}'),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  if (isHost) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: msgCtrl,
+                            decoration: InputDecoration(
+                              hintText: _t('broadcastInputPlaceholder'),
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: kCrimsonRed),
+                          onPressed: () {
+                            final txt = msgCtrl.text.trim();
+                            if (txt.isEmpty) return;
+                            _emit('send_channel_message', {
+                              'channelId': channelId,
+                              'text': txt,
+                            });
+                            msgCtrl.clear();
+                          },
+                          child: const Icon(Icons.send, size: 16),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              if (isHost)
+                TextButton(
+                  onPressed: () {
+                    _emit('close_channel', {'channelId': channelId});
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Text(
+                    _t('endBroadcast'),
+                    style: const TextStyle(color: kCrimsonRed, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: kBrandBlue),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(_t('closeBtn')),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLucideIcon(String type, Color color, {double size = 16}) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: _LucideIconPainter(type: type, color: color),
     );
   }
 
@@ -2192,7 +2535,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               border: Border.all(color: borderColor),
                             ),
                             child: Text(
-                              '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} · ${_roomUsers.length} aktif · Çevrede $_nearbyInstalledCount kişide yüklü',
+                              '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} · ${_t('nearbyInstalledBadge').replaceAll('{active}', '${_roomUsers.length}').replaceAll('{installed}', '$_nearbyInstalledCount')}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -2237,7 +2580,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Özel',
+                                _t('tabPrivate'),
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.bold,
@@ -2270,6 +2613,74 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   ),
                 ),
 
+                if (_nearbyChannels.isNotEmpty)
+                  ..._nearbyChannels.take(1).map((ch) {
+                    return GestureDetector(
+                      onTap: () => _showLiveChannelDialog(ch),
+                      child: Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: kCrimsonRed.withValues(alpha: isDark ? 0.18 : 0.10),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: kCrimsonRed.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: kCrimsonRed,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _t('liveChannelBadge'),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      '${ch['title'] ?? ''} · ${ch['listenerCount'] ?? 1} ${_t('listeners')}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              _t('listenBtn'),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: kCrimsonRed,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+
                 if (_showSimBar)
                   Container(
                     width: double.infinity,
@@ -2290,7 +2701,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             const Icon(CupertinoIcons.lab_flask, size: 14, color: Color(0xFFD97706)),
                             const SizedBox(width: 4),
                             Text(
-                              'Mesafe Simülatörü:',
+                              '${_t('simToggle')}:',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -2350,7 +2761,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   const CircularProgressIndicator(color: kBrandBlue),
                                   const SizedBox(height: 14),
                                   Text(
-                                    '100m çevrenizdeki odaya bağlanmak için GPS konumu alınıyor...',
+                                    _t('gettingLocation'),
                                     textAlign: TextAlign.center,
                                     style: TextStyle(color: textSecondary, fontSize: 13.5),
                                   ),
@@ -2362,10 +2773,25 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             ? Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(24),
-                                  child: Text(
-                                    'Özel mesajlaşmak için odadaki bir kullanıcının ismine dokunun.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: textSecondary, fontSize: 14),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _t('dmEmptyTitle'),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: textPrimary,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _t('dmEmptyHint'),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(color: textSecondary, fontSize: 13.5),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               )
@@ -2385,8 +2811,12 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                   final joins = entry.where((m) => m.systemType == 'join').length;
                                   final leaves = entry.where((m) => m.systemType == 'leave').length;
                                   final parts = <String>[];
-                                  if (joins > 0) parts.add('$joins kişi katıldı');
-                                  if (leaves > 0) parts.add('$leaves kişi ayrıldı');
+                                  if (joins > 0) {
+                                    parts.add(_t('groupJoined').replaceAll('{n}', '$joins'));
+                                  }
+                                  if (leaves > 0) {
+                                    parts.add(_t('groupLeft').replaceAll('{n}', '$leaves'));
+                                  }
                                   final summary =
                                       '${parts.join(' · ')} ${isExpanded ? '▴' : '▾'}';
 
@@ -2447,7 +2877,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                       borderRadius: BorderRadius.circular(999),
                                                     ),
                                                     child: Text(
-                                                      sub.text,
+                                                      localizeSystemText(sub.text, _uiLang),
                                                       style: TextStyle(
                                                         fontSize: 10.5,
                                                         fontWeight: FontWeight.w500,
@@ -2493,7 +2923,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                               : null,
                                         ),
                                         child: Text(
-                                          item.text,
+                                          localizeSystemText(item.text, _uiLang),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontSize: 11.5,
@@ -2616,7 +3046,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                               }
                                                             },
                                                             child: Text(
-                                                              item.senderName ?? 'Kullanıcı',
+                                                              item.senderName ?? 'User',
                                                               style: TextStyle(
                                                                 fontWeight: FontWeight.bold,
                                                                 fontSize: 13.5,
@@ -2648,7 +3078,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                             GestureDetector(
                                                               onTap: () => _showReportConfirmModal(
                                                                 item.senderClientId!,
-                                                                item.senderName ?? 'Kullanıcı',
+                                                                item.senderName ?? 'User',
                                                               ),
                                                               child: const Icon(
                                                                 Icons.shield_outlined,
@@ -2819,7 +3249,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                     ),
                                                     const SizedBox(width: 4),
                                                     Text(
-                                                      'Yanıtla',
+                                                      _t('reply'),
                                                       style: TextStyle(
                                                         fontSize: 11,
                                                         fontWeight: FontWeight.w500,
@@ -2843,7 +3273,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                       ),
                                                       const SizedBox(width: 4),
                                                       Text(
-                                                        translated != null ? 'Orijinal' : 'Çevir',
+                                                        translated != null ? _t('original') : _t('translate'),
                                                         style: TextStyle(
                                                           fontSize: 11,
                                                           fontWeight: FontWeight.w500,
@@ -2885,7 +3315,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           const SizedBox(width: 6),
                           Flexible(
                             child: Text(
-                              '${_activeTypingNames.join(', ')} yazıyor...',
+                              '${_activeTypingNames.join(', ')} ${_t('typing')}',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 12,
@@ -2945,10 +3375,10 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               onSubmitted: (_) => _handleSendMessage(),
                               decoration: InputDecoration(
                                 hintText: _isBanned
-                                    ? 'Bugün susturuldunuz'
+                                    ? _t('inputBanned')
                                     : _activeView == 'dm'
-                                        ? '${_dmPeerName ?? 'Özel'} — fısıltı yazın...'
-                                        : '${_selectedRadius}m — odasına mesaj yazın...',
+                                        ? '${_dmPeerName ?? _t('tabPrivate')} — ${_t('inputWhisperPlaceholder')}'
+                                        : '${_selectedRadius >= 1000 ? '${_selectedRadius ~/ 1000}km' : '${_selectedRadius}m'} — ${_t('inputRoomPlaceholder')}',
                                 filled: true,
                                 fillColor: pillBg,
                                 contentPadding: const EdgeInsets.symmetric(
@@ -3001,8 +3431,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               ),
                               child: Text(
                                 _isPlus
-                                    ? 'Plus • Sınırsız'
-                                    : '$_remainingQuota/$_dailyLimit mesaj • Plus',
+                                    ? 'Plus • ${_t('unlimited')}'
+                                    : '$_remainingQuota/$_dailyLimit ${_t('messagesUnit')} • Plus',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -3014,7 +3444,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                           GestureDetector(
                             onTap: _showStoryDialog,
                             child: Text(
-                              'Beni Görüyor Musun?',
+                              _t('doYouSeeMe'),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w500,
@@ -3053,7 +3483,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                         return ListTile(
                           dense: true,
                           title: Text(
-                            r >= 1000 ? '${r ~/ 1000} km Menzil' : '$r m Menzil',
+                            r >= 1000 ? '${r ~/ 1000} km' : '$r m',
                             style: TextStyle(
                               fontWeight: _selectedRadius == r
                                   ? FontWeight.bold
@@ -3062,9 +3492,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                             ),
                           ),
                           trailing: locked
-                              ? const Text(
-                                  'PLUS',
-                                  style: TextStyle(
+                              ? Text(
+                                  _t('upgradeBadge'),
+                                  style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: kBrandBlue,
@@ -3099,8 +3529,8 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                   borderRadius: BorderRadius.circular(18),
                   color: isDark ? const Color(0xFF262626) : Colors.white,
                   child: Container(
-                    width: 260,
-                    constraints: const BoxConstraints(maxHeight: 340),
+                    width: 268,
+                    constraints: const BoxConstraints(maxHeight: 360),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
@@ -3110,11 +3540,49 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${_t('yourIdentity')} $_myUsername',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() => _showMembersDrawer = false);
+                                if (!_isPlus) {
+                                  _showPlusDialog();
+                                  return;
+                                }
+                                _showNicknameDialog();
+                              },
+                              child: Text(
+                                _t('changeName'),
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: kBrandBlue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 14),
                         Text(
-                          'Odadaki Kişiler (${_roomUsers.length})',
+                          '${_t('activeMembersHeader')} (${_roomUsers.length})',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                         ),
-                        const Divider(),
+                        Text(
+                          _t('clickForWhisper'),
+                          style: TextStyle(fontSize: 11, color: textSecondary),
+                        ),
+                        const SizedBox(height: 6),
                         Flexible(
                           child: ListView.builder(
                             shrinkWrap: true,
@@ -3126,27 +3594,32 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                               return ListTile(
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
+                                onTap: isMe
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _showMembersDrawer = false;
+                                          _dmDraftPeer = u;
+                                          _activeView = 'dm';
+                                        });
+                                      },
                                 title: Text(
-                                  isMe ? '${u.username} (Sen)' : u.username,
+                                  isMe ? '${u.username} ${_t('you')}' : u.username,
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                     color: _parseHexColor(u.color),
                                   ),
                                 ),
-                                subtitle: d != null ? Text('${d}m uzakta') : null,
-                                trailing: isMe
-                                    ? null
-                                    : TextButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            _showMembersDrawer = false;
-                                            _dmDraftPeer = u;
-                                            _activeView = 'dm';
-                                          });
-                                        },
-                                        child: const Text('Özel Yaz'),
-                                      ),
+                                trailing: d != null
+                                    ? Text(
+                                        '${d}m',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: textSecondary,
+                                        ),
+                                      )
+                                    : null,
                               );
                             },
                           ),
@@ -3157,834 +3630,1432 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 ),
               ),
 
-            // HAMBURGER MENÜ (#1A81E5 Mesaj Mavisi & #DC143C Crimson Red)
+            // HAMBURGER MENÜ (Web ile %100 Birebir Tasarım, İkonlar, Renkler ve Boşluklar)
             if (_showHamburgerMenu)
               Positioned(
                 top: 58,
                 right: 12,
-                child: Material(
-                  elevation: 16,
-                  borderRadius: BorderRadius.circular(20),
-                  color: isDark ? const Color(0xFF262626) : Colors.white,
-                  child: Container(
-                    width: 294,
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.78,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: borderColor),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // 1. PLUS & KANAL KUR KUTULARI
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Column(
-                                children: [
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(14),
-                                    onTap: () {
-                                      setState(() => _showHamburgerMenu = false);
-                                      _showPlusDialog();
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: kBrandBlue.withValues(alpha: isDark ? 0.15 : 0.10),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: kBrandBlue.withValues(alpha: isDark ? 0.40 : 0.30),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Material(
+                      elevation: 16,
+                      borderRadius: BorderRadius.circular(18),
+                      color: isDark
+                          ? const Color(0xFF262626).withValues(alpha: 0.96)
+                          : Colors.white.withValues(alpha: 0.96),
+                      child: Container(
+                        width: 288,
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.80,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: isDark
+                                ? const Color(0xFF404040)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.14),
+                              blurRadius: 28,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: RawScrollbar(
+                          thumbColor: isDark
+                              ? const Color(0xFF525252)
+                              : const Color(0xFFCBD5E1),
+                          radius: const Radius.circular(999),
+                          thickness: 4,
+                          padding: const EdgeInsets.only(right: 3, top: 8, bottom: 8),
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // 1. PLUS & KANAL KUR KUTULARI
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () {
+                                          setState(() => _showHamburgerMenu = false);
+                                          _showPlusDialog();
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: kBrandBlue.withValues(
+                                              alpha: isDark ? 0.15 : 0.10,
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: kBrandBlue.withValues(
+                                                alpha: isDark ? 0.40 : 0.30,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      CupertinoIcons.sparkles,
+                                                      size: 16,
+                                                      color: isDark
+                                                          ? kBrandBlueDarkText
+                                                          : kBrandBlue,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        _isPlus
+                                                            ? _t('plusActive')
+                                                            : _t('upgradeToPlus'),
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.w600,
+                                                          fontSize: 13.5,
+                                                          color: isDark
+                                                              ? kBrandBlueDarkText
+                                                              : kBrandBlue,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: kBrandBlue,
+                                                      borderRadius: BorderRadius.circular(999),
+                                                    ),
+                                                    child: Text(
+                                                      _isPlus ? 'VIP' : _t('upgradeBadge'),
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (!_isPlus) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      _t('freeForNow'),
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: isDark
+                                                            ? const Color(0xFF9BB5A6)
+                                                            : const Color(0xFF6B8577),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      const SizedBox(height: 8),
+
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () {
+                                          setState(() => _showHamburgerMenu = false);
+                                          _showCreateChannelDialog();
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: kCrimsonRed.withValues(
+                                              alpha: isDark ? 0.15 : 0.10,
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: kCrimsonRed.withValues(
+                                                alpha: isDark ? 0.40 : 0.30,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Row(
+                                                  children: [
+                                                    _buildLucideIcon(
+                                                      'megaphone',
+                                                      isDark
+                                                          ? kCrimsonRedDarkText
+                                                          : kCrimsonRed,
+                                                      size: 16,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        _t('createChannelMenu'),
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.w600,
+                                                          fontSize: 13.5,
+                                                          height: 1.25,
+                                                          color: isDark
+                                                              ? kCrimsonRedDarkText
+                                                              : kCrimsonRed,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: kCrimsonRed,
+                                                      borderRadius: BorderRadius.circular(999),
+                                                    ),
+                                                    child: const Text(
+                                                      'PRO',
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    _t('freeForNow'),
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: isDark
+                                                          ? const Color(0xFF9BB5A6)
+                                                          : const Color(0xFF6B8577),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                Divider(
+                                  height: 12,
+                                  thickness: 1,
+                                  color: isDark
+                                      ? const Color(0xFF333333)
+                                      : const Color(0xFFF1F5F9),
+                                ),
+
+                                // 2. DİL SEÇİCİ (Bayraksız, Saf Metin - Web İle Birebir)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 6,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Row(
                                             children: [
                                               Icon(
-                                                CupertinoIcons.sparkles,
-                                                size: 17,
-                                                color: isDark ? kBrandBlueDarkText : kBrandBlue,
+                                                CupertinoIcons.globe,
+                                                size: 16,
+                                                color: isDark
+                                                    ? kBrandBlueDarkText
+                                                    : kBrandBlue,
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
-                                                _isPlus ? 'Mitemasuka Plus Aktif' : "Mitemasuka Plus'a Geç",
+                                                _t('appLanguage'),
                                                 style: TextStyle(
+                                                  fontSize: 12,
                                                   fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: isDark ? kBrandBlueDarkText : kBrandBlue,
+                                                  color: isDark
+                                                      ? const Color(0xFFD4D4D4)
+                                                      : const Color(0xFF475569),
                                                 ),
                                               ),
                                             ],
                                           ),
+                                          Text(
+                                            const {
+                                                  'tr': 'Türkçe',
+                                                  'en': 'English',
+                                                  'ja': '日本語',
+                                                  'de': 'Deutsch',
+                                                  'es': 'Español',
+                                                  'fr': 'Français',
+                                                  'ru': 'Русский',
+                                                  'ar': 'العربية',
+                                                }[_uiLang] ??
+                                                'Türkçe',
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFF737373)
+                                                  : const Color(0xFF94A3B8),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      GridView.count(
+                                        crossAxisCount: 4,
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        mainAxisSpacing: 6,
+                                        crossAxisSpacing: 6,
+                                        childAspectRatio: 2.1,
+                                        children: [
+                                          for (final langItem in const [
+                                            {'code': 'tr', 'short': 'TR'},
+                                            {'code': 'en', 'short': 'EN'},
+                                            {'code': 'ja', 'short': 'JA'},
+                                            {'code': 'de', 'short': 'DE'},
+                                            {'code': 'es', 'short': 'ES'},
+                                            {'code': 'fr', 'short': 'FR'},
+                                            {'code': 'ru', 'short': 'RU'},
+                                            {'code': 'ar', 'short': 'AR'},
+                                          ])
+                                            InkWell(
+                                              borderRadius: BorderRadius.circular(12),
+                                              onTap: () async {
+                                                final code = langItem['code']!;
+                                                setState(() {
+                                                  _uiLang = code;
+                                                  _translations.clear();
+                                                });
+                                                final prefs =
+                                                    await SharedPreferences.getInstance();
+                                                await prefs.setString(
+                                                  'mitemasuka_lang',
+                                                  code,
+                                                );
+                                                _triggerAutoTranslateForAll();
+                                              },
+                                              child: Container(
+                                                alignment: Alignment.center,
+                                                decoration: BoxDecoration(
+                                                  color: _uiLang == langItem['code']
+                                                      ? kBrandBlue
+                                                      : (isDark
+                                                            ? const Color(0xFF171717)
+                                                            : const Color(0xFFF8FAFC)),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: _uiLang == langItem['code']
+                                                        ? kBrandBlue
+                                                        : (isDark
+                                                              ? const Color(0xFF404040)
+                                                              : const Color(0xFFE2E8F0)),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  langItem['short']!,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: _uiLang == langItem['code']
+                                                        ? Colors.white
+                                                        : (isDark
+                                                              ? const Color(0xFFD4D4D4)
+                                                              : const Color(0xFF334155)),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                Divider(
+                                  height: 12,
+                                  thickness: 1,
+                                  color: isDark
+                                      ? const Color(0xFF333333)
+                                      : const Color(0xFFF1F5F9),
+                                ),
+
+                                // 3. ANA LİSTE (Tek Blok - Arada Çizgi Yok - Web İle Birebir)
+                                // 3.1 Otomatik Çeviri (Ücretsiz)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _autoTranslate = !_autoTranslate);
+                                    _triggerAutoTranslateForAll();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.globe,
+                                          size: 16,
+                                          color: isDark
+                                              ? const Color(0xFF93B5A4)
+                                              : const Color(0xFF6E9482),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('autoTranslateMenu'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              height: 1.25,
+                                              fontWeight: FontWeight.w500,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _autoTranslate
+                                                ? (isDark
+                                                      ? const Color(0xFF25302B)
+                                                      : const Color(0xFFE6F0EB))
+                                                : (isDark
+                                                      ? const Color(0xFF171717)
+                                                      : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            _autoTranslate ? _t('on') : _t('off'),
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: _autoTranslate
+                                                  ? (isDark
+                                                        ? const Color(0xFFA3C4B3)
+                                                        : const Color(0xFF49735E))
+                                                  : (isDark
+                                                        ? const Color(0xFFA3A3A3)
+                                                        : const Color(0xFF64748B)),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.2 Mitemasuka Nedir?
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _showHamburgerMenu = false);
+                                    _showStoryDialog();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.info_circle,
+                                          size: 16,
+                                          color: isDark
+                                              ? kBrandBlueDarkText
+                                              : kBrandBlue,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _t('whatIsMitemasuka'),
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isDark
+                                                      ? Colors.white
+                                                      : const Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              Text(
+                                                _t('whatIsSub'),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  height: 1.3,
+                                                  color: isDark
+                                                      ? const Color(0xFFA3A3A3)
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.3 Yakınındakini Ekle (QR Kod)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _showHamburgerMenu = false);
+                                    _showQrDialog();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.qrcode,
+                                          size: 16,
+                                          color: isDark
+                                              ? const Color(0xFF93B5A4)
+                                              : const Color(0xFF6E9482),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _t('addNearbyQr'),
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isDark
+                                                      ? Colors.white
+                                                      : const Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              Text(
+                                                _t('addNearbyQrSub'),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  height: 1.3,
+                                                  color: isDark
+                                                      ? const Color(0xFFA3A3A3)
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.4 Takma Adımı Değiştir (Edit3 ikonu)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _showHamburgerMenu = false);
+                                    if (!_isPlus) {
+                                      _showPlusDialog();
+                                      return;
+                                    }
+                                    _showNicknameDialog();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          'edit3',
+                                          isDark ? kBrandBlueDarkText : kBrandBlue,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('changeMyNickname'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        if (!_isPlus)
+                                          Icon(
+                                            CupertinoIcons.lock,
+                                            size: 14,
+                                            color: isDark
+                                                ? const Color(0xFFD4B07F)
+                                                : const Color(0xFFC49B66),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.5 Hayalet Modu (Sessiz Giriş) (Ghost ikonu)
+                                InkWell(
+                                  onTap: () {
+                                    if (!_isPlus) {
+                                      setState(() => _showHamburgerMenu = false);
+                                      _showPlusDialog();
+                                      return;
+                                    }
+                                    _emit('set_ghost_mode', {'enabled': !_ghostMode});
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          'ghost',
+                                          isDark
+                                              ? const Color(0xFFAEA0C8)
+                                              : const Color(0xFF8C7DA8),
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('ghostModeMenu'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              height: 1.25,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        if (!_isPlus)
+                                          Icon(
+                                            CupertinoIcons.lock,
+                                            size: 14,
+                                            color: isDark
+                                                ? const Color(0xFFD4B07F)
+                                                : const Color(0xFFC49B66),
+                                          )
+                                        else
                                           Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 8,
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: kBrandBlue,
+                                              color: _ghostMode
+                                                  ? (isDark
+                                                        ? const Color(0xFF2D2838)
+                                                        : const Color(0xFFEDE8F5))
+                                                  : (isDark
+                                                        ? const Color(0xFF171717)
+                                                        : const Color(0xFFF1F5F9)),
                                               borderRadius: BorderRadius.circular(999),
                                             ),
                                             child: Text(
-                                              _isPlus ? 'VIP' : 'PLUS',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 10.5,
-                                                fontWeight: FontWeight.bold,
+                                              _ghostMode ? _t('on') : _t('off'),
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: _ghostMode
+                                                    ? (isDark
+                                                          ? const Color(0xFFC5B8DE)
+                                                          : const Color(0xFF5E4F7A))
+                                                    : (isDark
+                                                          ? const Color(0xFFA3A3A3)
+                                                          : const Color(0xFF64748B)),
                                               ),
                                             ),
                                           ),
-                                        ],
-                                      ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                ),
 
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(14),
-                                    onTap: () {
-                                      setState(() => _showHamburgerMenu = false);
-                                      _showCreateChannelDialog();
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: kCrimsonRed.withValues(alpha: isDark ? 0.15 : 0.10),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: kCrimsonRed.withValues(alpha: isDark ? 0.40 : 0.30),
+                                // 3.6 Oda Mesaj Bildirimi (Hoparlör ikonu - Yeşil)
+                                InkWell(
+                                  onTap: () async {
+                                    final next = !_roomNotifEnabled;
+                                    setState(
+                                      () => _roomNotifEnabled = next,
+                                    );
+                                    if (next) _playNotifSound();
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.setBool(
+                                      'mitemasuka_notif_room',
+                                      next,
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          _roomNotifEnabled ? 'volume2' : 'volumex',
+                                          _roomNotifEnabled
+                                              ? (isDark
+                                                    ? const Color(0xFF93B5A4)
+                                                    : const Color(0xFF6E9482))
+                                              : const Color(0xFF94A3B8),
+                                          size: 16,
                                         ),
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  CupertinoIcons.speaker_2,
-                                                  size: 17,
-                                                  color: isDark ? kCrimsonRedDarkText : kCrimsonRed,
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    'Kanal Kur (Tek Yönlü Seslen)',
-                                                    style: TextStyle(
-                                                      fontWeight: FontWeight.w600,
-                                                      fontSize: 12.5,
-                                                      color: isDark
-                                                          ? kCrimsonRedDarkText
-                                                          : kCrimsonRed,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('roomNotif'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
                                             ),
                                           ),
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.end,
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: kCrimsonRed,
-                                                  borderRadius: BorderRadius.circular(999),
-                                                ),
-                                                child: const Text(
-                                                  'PRO',
-                                                  style: TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _roomNotifEnabled
+                                                ? (isDark
+                                                      ? const Color(0xFF25302B)
+                                                      : const Color(0xFFE6F0EB))
+                                                : (isDark
+                                                      ? const Color(0xFF171717)
+                                                      : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            _roomNotifEnabled ? _t('on') : _t('off'),
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: _roomNotifEnabled
+                                                  ? (isDark
+                                                        ? const Color(0xFFA3C4B3)
+                                                        : const Color(0xFF49735E))
+                                                  : (isDark
+                                                        ? const Color(0xFFA3A3A3)
+                                                        : const Color(0xFF64748B)),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.7 Özel Fısıltı Bildirimi (Hoparlör ikonu - Mor/Lavanta)
+                                InkWell(
+                                  onTap: () async {
+                                    final next = !_whisperNotifEnabled;
+                                    setState(
+                                      () =>
+                                          _whisperNotifEnabled = next,
+                                    );
+                                    if (next) _playNotifSound();
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.setBool(
+                                      'mitemasuka_notif_whisper',
+                                      next,
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          _whisperNotifEnabled
+                                              ? 'volume2'
+                                              : 'volumex',
+                                          _whisperNotifEnabled
+                                              ? (isDark
+                                                    ? const Color(0xFFAEA0C8)
+                                                    : const Color(0xFF8C7DA8))
+                                              : const Color(0xFF94A3B8),
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('whisperNotif'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _whisperNotifEnabled
+                                                ? (isDark
+                                                      ? const Color(0xFF2D2838)
+                                                      : const Color(0xFFEDE8F5))
+                                                : (isDark
+                                                      ? const Color(0xFF171717)
+                                                      : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            _whisperNotifEnabled ? _t('on') : _t('off'),
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: _whisperNotifEnabled
+                                                  ? (isDark
+                                                        ? const Color(0xFFC5B8DE)
+                                                        : const Color(0xFF5E4F7A))
+                                                  : (isDark
+                                                        ? const Color(0xFFA3A3A3)
+                                                        : const Color(0xFF64748B)),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.8 Giriş / Çıkış Uyarısı (Hoparlör ikonu - Gri/Mavi)
+                                InkWell(
+                                  onTap: () async {
+                                    final next = !_presenceNotifEnabled;
+                                    setState(
+                                      () =>
+                                          _presenceNotifEnabled = next,
+                                    );
+                                    if (next) _playNotifSound();
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.setBool(
+                                      'mitemasuka_notif_presence',
+                                      next,
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          _presenceNotifEnabled
+                                              ? 'volume2'
+                                              : 'volumex',
+                                          _presenceNotifEnabled
+                                              ? (isDark
+                                                    ? kBrandBlueDarkText
+                                                    : kBrandBlue)
+                                              : const Color(0xFF94A3B8),
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('presenceNotif'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _presenceNotifEnabled
+                                                ? kBrandBlue.withValues(
+                                                    alpha: isDark ? 0.20 : 0.10,
+                                                  )
+                                                : (isDark
+                                                      ? const Color(0xFF171717)
+                                                      : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            _presenceNotifEnabled ? _t('on') : _t('off'),
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: _presenceNotifEnabled
+                                                  ? (isDark
+                                                        ? kBrandBlueDarkText
+                                                        : kBrandBlue)
+                                                  : (isDark
+                                                        ? const Color(0xFFA3A3A3)
+                                                        : const Color(0xFF64748B)),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.9 Kurallar & Engellenenler (ShieldAlert - Kırmızı)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _showHamburgerMenu = false);
+                                    _showRulesAndBlockedDialog();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          'shield_alert',
+                                          isDark ? kCrimsonRedDarkText : kCrimsonRed,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('rulesAndBlocked'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        if (_blockedClientIds.isNotEmpty)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: kCrimsonRed.withValues(
+                                                alpha: isDark ? 0.20 : 0.10,
                                               ),
-                                              const SizedBox(height: 2),
+                                              borderRadius: BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              '${_blockedClientIds.length}',
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: isDark
+                                                    ? kCrimsonRedDarkText
+                                                    : kCrimsonRed,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.10 Gizlilik Politikası (ShieldCheck - Mavi + ↗)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _showHamburgerMenu = false);
+                                    _showLegalDialog('privacy');
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          'shield_check',
+                                          isDark ? kBrandBlueDarkText : kBrandBlue,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('privacyPolicy'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        const Text(
+                                          '↗',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF94A3B8),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // 3.11 Kullanım Şartları (FileText - Mavi + ↗)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() => _showHamburgerMenu = false);
+                                    _showLegalDialog('terms');
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.doc_text,
+                                          size: 16,
+                                          color: isDark
+                                              ? kBrandBlueDarkText
+                                              : kBrandBlue,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('termsOfUse'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFE5E5E5)
+                                                  : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                        ),
+                                        const Text(
+                                          '↗',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF94A3B8),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                Divider(
+                                  height: 12,
+                                  thickness: 1,
+                                  color: isDark
+                                      ? const Color(0xFF333333)
+                                      : const Color(0xFFF1F5F9),
+                                ),
+
+                                // 4. SOHBET ZEMİNİ (Palette ikonu + sağda aktif zemin adı + 6'lı grid)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 6,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              _buildLucideIcon(
+                                                'palette',
+                                                isDark
+                                                    ? kBrandBlueDarkText
+                                                    : kBrandBlue,
+                                                size: 16,
+                                              ),
+                                              const SizedBox(width: 8),
                                               Text(
-                                                'Şimdilik Ücretsiz',
+                                                _t('chatBgTitle'),
                                                 style: TextStyle(
-                                                  fontSize: 9.5,
+                                                  fontSize: 12,
                                                   fontWeight: FontWeight.w600,
                                                   color: isDark
-                                                      ? const Color(0xFF9BB5A6)
-                                                      : const Color(0xFF6B8577),
+                                                      ? const Color(0xFFD4D4D4)
+                                                      : const Color(0xFF475569),
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Divider(height: 16),
-
-                            // 2. DİL SEÇİCİ (8 DİL GRID - WEB İLE BİREBİR)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            CupertinoIcons.globe,
-                                            size: 16,
-                                            color: isDark ? kBrandBlueDarkText : kBrandBlue,
-                                          ),
-                                          const SizedBox(width: 6),
                                           Text(
-                                            'Dil / Language',
+                                            _t('bg_$_chatBg'),
                                             style: TextStyle(
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: textPrimary,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFF737373)
+                                                  : const Color(0xFF94A3B8),
                                             ),
                                           ),
                                         ],
                                       ),
+                                      const SizedBox(height: 8),
+                                      GridView.count(
+                                        crossAxisCount: 3,
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        mainAxisSpacing: 6,
+                                        crossAxisSpacing: 6,
+                                        childAspectRatio: 2.35,
+                                        children: [
+                                          for (final bgOpt in [
+                                            {
+                                              'id': 'ice',
+                                              'label': _t('bg_ice'),
+                                              'dot': 0xFFE6ECF5,
+                                            },
+                                            {
+                                              'id': 'mist',
+                                              'label': _t('bg_mist'),
+                                              'dot': 0xFFDBEAFE,
+                                            },
+                                            {
+                                              'id': 'slate',
+                                              'label': _t('bg_slate'),
+                                              'dot': 0xFFD4DDE8,
+                                            },
+                                            {
+                                              'id': 'dots',
+                                              'label': _t('bg_dots'),
+                                              'dot': 0xFFDEE6F0,
+                                            },
+                                            {
+                                              'id': 'sand',
+                                              'label': _t('bg_sand'),
+                                              'dot': 0xFFE7E2D8,
+                                            },
+                                            {
+                                              'id': 'mint',
+                                              'label': _t('bg_mint'),
+                                              'dot': 0xFFDCEBE4,
+                                            },
+                                          ])
+                                            InkWell(
+                                              borderRadius: BorderRadius.circular(12),
+                                              onTap: () async {
+                                                final id = bgOpt['id'] as String;
+                                                setState(() => _chatBg = id);
+                                                final prefs =
+                                                    await SharedPreferences.getInstance();
+                                                await prefs.setString(
+                                                  'mitemasuka_chat_bg',
+                                                  id,
+                                                );
+                                              },
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: _chatBg == bgOpt['id']
+                                                      ? kBrandBlue.withValues(
+                                                          alpha: isDark ? 0.20 : 0.10,
+                                                        )
+                                                      : (isDark
+                                                            ? const Color(0xFF171717)
+                                                            : const Color(0xFFF8FAFC)),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: _chatBg == bgOpt['id']
+                                                        ? kBrandBlue
+                                                        : (isDark
+                                                              ? const Color(0xFF404040)
+                                                              : const Color(0xFFE2E8F0)),
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Container(
+                                                      width: 11,
+                                                      height: 11,
+                                                      decoration: BoxDecoration(
+                                                        color: Color(
+                                                          bgOpt['dot'] as int,
+                                                        ),
+                                                        shape: BoxShape.circle,
+                                                        border: Border.all(
+                                                          color: isDark
+                                                              ? const Color(0xFF525252)
+                                                              : const Color(0xFFCBD5E1),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 5),
+                                                    Expanded(
+                                                      child: Text(
+                                                        bgOpt['label'] as String,
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              _chatBg == bgOpt['id']
+                                                              ? FontWeight.w700
+                                                              : FontWeight.w500,
+                                                          color: _chatBg == bgOpt['id']
+                                                              ? (isDark
+                                                                    ? kBrandBlueDarkText
+                                                                    : kBrandBlue)
+                                                              : (isDark
+                                                                    ? const Color(
+                                                                        0xFFD4D4D4,
+                                                                      )
+                                                                    : const Color(
+                                                                        0xFF475569,
+                                                                      )),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                Divider(
+                                  height: 12,
+                                  thickness: 1,
+                                  color: isDark
+                                      ? const Color(0xFF333333)
+                                      : const Color(0xFFF1F5F9),
+                                ),
+
+                                // 5. TEST MESAFE SİMÜLATÖRÜ (FlaskConical ikonu + Kehribar/Amber yazı)
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _showSimBar = !_showSimBar;
+                                      _showHamburgerMenu = false;
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _buildLucideIcon(
+                                          'flask',
+                                          isDark
+                                              ? const Color(0xFFFCD34D)
+                                              : const Color(0xFFD97706),
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            _t('simToggle'),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w400,
+                                              color: isDark
+                                                  ? const Color(0xFFFCD34D)
+                                                  : const Color(0xFFD97706),
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          _showSimBar ? _t('hide') : _t('show'),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w400,
+                                            color: isDark
+                                                ? const Color(0xFFFCD34D)
+                                                : const Color(0xFFD97706),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                Divider(
+                                  height: 12,
+                                  thickness: 1,
+                                  color: isDark
+                                      ? const Color(0xFF333333)
+                                      : const Color(0xFFE2E8F0),
+                                ),
+
+                                // 6. İLETİŞİM ALANI
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
                                       Text(
-                                        _uiLang.toUpperCase(),
+                                        _t('contact'),
                                         style: TextStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: textSecondary,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 0.6,
+                                          color: isDark
+                                              ? const Color(0xFF737373)
+                                              : const Color(0xFF94A3B8),
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  GridView.count(
-                                    crossAxisCount: 4,
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    mainAxisSpacing: 6,
-                                    crossAxisSpacing: 6,
-                                    childAspectRatio: 2.1,
-                                    children: [
-                                      for (final langItem in const [
-                                        {'code': 'tr', 'flag': '🇹🇷', 'label': 'TR'},
-                                        {'code': 'en', 'flag': '🇬🇧', 'label': 'EN'},
-                                        {'code': 'ja', 'flag': '🇯🇵', 'label': 'JA'},
-                                        {'code': 'de', 'flag': '🇩🇪', 'label': 'DE'},
-                                        {'code': 'es', 'flag': '🇪🇸', 'label': 'ES'},
-                                        {'code': 'fr', 'flag': '🇫🇷', 'label': 'FR'},
-                                        {'code': 'ru', 'flag': '🇷🇺', 'label': 'RU'},
-                                        {'code': 'ar', 'flag': '🇸🇦', 'label': 'AR'},
-                                      ])
-                                        InkWell(
-                                          borderRadius: BorderRadius.circular(8),
-                                          onTap: () async {
-                                            final code = langItem['code']!;
-                                            setState(() {
-                                              _uiLang = code;
-                                              _translations.clear();
-                                            });
-                                            final prefs = await SharedPreferences.getInstance();
-                                            await prefs.setString('mitemasuka_lang', code);
-                                          },
-                                          child: Container(
-                                            alignment: Alignment.center,
-                                            decoration: BoxDecoration(
-                                              color: _uiLang == langItem['code']
-                                                  ? kBrandBlue
-                                                  : (isDark
-                                                        ? const Color(0xFF333333)
-                                                        : const Color(0xFFF5F5F4)),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: _uiLang == langItem['code']
-                                                    ? kBrandBlue
-                                                    : borderColor,
-                                              ),
+                                      const SizedBox(height: 5),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          GestureDetector(
+                                            onTap: () => launchUrl(
+                                              Uri.parse('mailto:info@mitemasuka.com'),
                                             ),
                                             child: Row(
-                                              mainAxisAlignment: MainAxisAlignment.center,
                                               children: [
-                                                Text(
-                                                  langItem['flag']!,
-                                                  style: const TextStyle(fontSize: 12),
+                                                Icon(
+                                                  CupertinoIcons.mail,
+                                                  size: 15,
+                                                  color: isDark
+                                                      ? const Color(0xFFD4D4D4)
+                                                      : const Color(0xFF475569),
                                                 ),
-                                                const SizedBox(width: 4),
+                                                const SizedBox(width: 8),
                                                 Text(
-                                                  langItem['label']!,
+                                                  'info@mitemasuka.com',
                                                   style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: _uiLang == langItem['code']
-                                                        ? Colors.white
-                                                        : textPrimary,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w400,
+                                                    color: isDark
+                                                        ? const Color(0xFFD4D4D4)
+                                                        : const Color(0xFF475569),
                                                   ),
                                                 ),
                                               ],
                                             ),
                                           ),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-
-                            // 3. OTOMATİK ÇEVİRİ
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: const Icon(
-                                CupertinoIcons.globe,
-                                size: 18,
-                                color: Color(0xFF6E9482),
-                              ),
-                              title: const Text(
-                                'Otomatik Çeviri (Ücretsiz)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _autoTranslate
-                                      ? const Color(0xFF6E9482).withValues(alpha: 0.16)
-                                      : (isDark ? const Color(0xFF333333) : const Color(0xFFF0EFEA)),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  _autoTranslate ? 'Açık' : 'Kapalı',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _autoTranslate ? const Color(0xFF6E9482) : textSecondary,
-                                  ),
-                                ),
-                              ),
-                              onTap: () => setState(() => _autoTranslate = !_autoTranslate),
-                            ),
-                            const Divider(height: 12),
-
-                            // 4. MİTEMASUKA NEDİR? (Alt açıklamalı)
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -1),
-                              leading: Icon(
-                                CupertinoIcons.info_circle,
-                                size: 18,
-                                color: isDark ? kBrandBlueDarkText : kBrandBlue,
-                              ),
-                              title: const Text(
-                                'Mitemasuka Nedir?',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                              ),
-                              subtitle: Text(
-                                '"Beni görüyor musun?" hikayesi ve tanıtım',
-                                style: TextStyle(fontSize: 10.5, color: textSecondary),
-                              ),
-                              onTap: () {
-                                setState(() => _showHamburgerMenu = false);
-                                _showStoryDialog();
-                              },
-                            ),
-
-                            // 5. YAKININDAKİNİ EKLE (QR KOD) (Alt açıklamalı)
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -1),
-                              leading: const Icon(
-                                CupertinoIcons.qrcode,
-                                size: 18,
-                                color: Color(0xFF6E9482),
-                              ),
-                              title: const Text(
-                                'Yakınındakini Ekle (QR Kod)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                              ),
-                              subtitle: Text(
-                                'Çevrendeki kişiler okutup odaya katılsın',
-                                style: TextStyle(fontSize: 10.5, color: textSecondary),
-                              ),
-                              onTap: () {
-                                setState(() => _showHamburgerMenu = false);
-                                _showQrDialog();
-                              },
-                            ),
-                            const Divider(height: 12),
-
-                            // 6. TAKMA ADIMI DEĞİŞTİR (Kilit ikonlu)
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: Icon(
-                                CupertinoIcons.pencil,
-                                size: 18,
-                                color: isDark ? kBrandBlueDarkText : kBrandBlue,
-                              ),
-                              title: const Text(
-                                'Takma Adımı Değiştir',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: !_isPlus
-                                  ? Icon(CupertinoIcons.lock, size: 14, color: textSecondary)
-                                  : null,
-                              onTap: () {
-                                setState(() => _showHamburgerMenu = false);
-                                if (!_isPlus) {
-                                  _showPlusDialog();
-                                  return;
-                                }
-                                _showNicknameDialog();
-                              },
-                            ),
-
-                            // 7. HAYALET MODU (Kilit ikonlu / Açık-Kapalı)
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: const Icon(
-                                CupertinoIcons.eye_slash,
-                                size: 18,
-                                color: Color(0xFF8C7DA8),
-                              ),
-                              title: const Text(
-                                'Hayalet Modu (Sessiz Giriş)',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: !_isPlus
-                                  ? Icon(CupertinoIcons.lock, size: 14, color: textSecondary)
-                                  : Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: _ghostMode
-                                            ? const Color(0xFF8C7DA8).withValues(alpha: 0.18)
-                                            : (isDark
-                                                  ? const Color(0xFF333333)
-                                                  : const Color(0xFFF0EFEA)),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Text(
-                                        _ghostMode ? 'Açık' : 'Kapalı',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: _ghostMode
-                                              ? const Color(0xFF8C7DA8)
-                                              : textSecondary,
-                                        ),
-                                      ),
-                                    ),
-                              onTap: () {
-                                if (!_isPlus) {
-                                  setState(() => _showHamburgerMenu = false);
-                                  _showPlusDialog();
-                                  return;
-                                }
-                                _emit('set_ghost_mode', {'enabled': !_ghostMode});
-                              },
-                            ),
-                            const Divider(height: 12),
-
-                            // 8. BİLDİRİM AYARLARI (ODA / ÖZEL / GİRİŞ-ÇIKIŞ)
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: Icon(
-                                _roomNotifEnabled ? CupertinoIcons.bell : CupertinoIcons.bell_slash,
-                                size: 18,
-                                color: _roomNotifEnabled ? const Color(0xFF6E9482) : textSecondary,
-                              ),
-                              title: const Text(
-                                'Oda Mesaj Bildirimi',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _roomNotifEnabled
-                                      ? const Color(0xFF6E9482).withValues(alpha: 0.16)
-                                      : (isDark ? const Color(0xFF333333) : const Color(0xFFF0EFEA)),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  _roomNotifEnabled ? 'Açık' : 'Kapalı',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _roomNotifEnabled
-                                        ? const Color(0xFF6E9482)
-                                        : textSecondary,
-                                  ),
-                                ),
-                              ),
-                              onTap: () async {
-                                setState(() => _roomNotifEnabled = !_roomNotifEnabled);
-                                final prefs = await SharedPreferences.getInstance();
-                                await prefs.setBool('mitemasuka_notif_room', _roomNotifEnabled);
-                              },
-                            ),
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: Icon(
-                                _whisperNotifEnabled
-                                    ? CupertinoIcons.bell
-                                    : CupertinoIcons.bell_slash,
-                                size: 18,
-                                color: _whisperNotifEnabled
-                                    ? (isDark ? kBrandBlueDarkText : kBrandBlue)
-                                    : textSecondary,
-                              ),
-                              title: const Text(
-                                'Özel Fısıltı Bildirimi',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _whisperNotifEnabled
-                                      ? kBrandBlue.withValues(alpha: 0.16)
-                                      : (isDark ? const Color(0xFF333333) : const Color(0xFFF0EFEA)),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  _whisperNotifEnabled ? 'Açık' : 'Kapalı',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _whisperNotifEnabled
-                                        ? (isDark ? kBrandBlueDarkText : kBrandBlue)
-                                        : textSecondary,
-                                  ),
-                                ),
-                              ),
-                              onTap: () async {
-                                setState(() => _whisperNotifEnabled = !_whisperNotifEnabled);
-                                final prefs = await SharedPreferences.getInstance();
-                                await prefs.setBool(
-                                  'mitemasuka_notif_whisper',
-                                  _whisperNotifEnabled,
-                                );
-                              },
-                            ),
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: Icon(
-                                _presenceNotifEnabled
-                                    ? CupertinoIcons.bell
-                                    : CupertinoIcons.bell_slash,
-                                size: 18,
-                                color: _presenceNotifEnabled
-                                    ? const Color(0xFFC29B61)
-                                    : textSecondary,
-                              ),
-                              title: const Text(
-                                'Giriş / Çıkış Uyarısı',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _presenceNotifEnabled
-                                      ? const Color(0xFFC29B61).withValues(alpha: 0.16)
-                                      : (isDark ? const Color(0xFF333333) : const Color(0xFFF0EFEA)),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  _presenceNotifEnabled ? 'Açık' : 'Kapalı',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _presenceNotifEnabled
-                                        ? const Color(0xFFC29B61)
-                                        : textSecondary,
-                                  ),
-                                ),
-                              ),
-                              onTap: () async {
-                                setState(() => _presenceNotifEnabled = !_presenceNotifEnabled);
-                                final prefs = await SharedPreferences.getInstance();
-                                await prefs.setBool(
-                                  'mitemasuka_notif_presence',
-                                  _presenceNotifEnabled,
-                                );
-                              },
-                            ),
-                            const Divider(height: 12),
-
-                            // 9. KURALLAR & ENGELLENENLER + YASAL BAĞLANTILAR
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: const Icon(
-                                CupertinoIcons.shield,
-                                size: 18,
-                                color: Color(0xFFC29B61),
-                              ),
-                              title: const Text(
-                                'Kurallar & Engellenenler',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: _blockedClientIds.isNotEmpty
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 7,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: kCrimsonRed.withValues(alpha: 0.16),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Text(
-                                        '${_blockedClientIds.length}',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? kCrimsonRedDarkText : kCrimsonRed,
-                                        ),
-                                      ),
-                                    )
-                                  : null,
-                              onTap: () {
-                                setState(() => _showHamburgerMenu = false);
-                                _showRulesAndBlockedDialog();
-                              },
-                            ),
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: Icon(
-                                CupertinoIcons.lock_shield,
-                                size: 18,
-                                color: isDark ? kBrandBlueDarkText : kBrandBlue,
-                              ),
-                              title: Text(
-                                _uiLang == 'tr' ? 'Gizlilik Politikası' : 'Privacy Policy',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              onTap: () {
-                                setState(() => _showHamburgerMenu = false);
-                                _showLegalDialog('privacy');
-                              },
-                            ),
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: Icon(
-                                CupertinoIcons.doc_text,
-                                size: 18,
-                                color: isDark ? kBrandBlueDarkText : kBrandBlue,
-                              ),
-                              title: Text(
-                                _uiLang == 'tr' ? 'Kullanım Şartları' : 'Terms of Use',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              onTap: () {
-                                setState(() => _showHamburgerMenu = false);
-                                _showLegalDialog('terms');
-                              },
-                            ),
-                            const Divider(height: 12),
-
-                            // 10. SOHBET ZEMİNİ (6 RENK SEÇİCİ - WEB İLE BİREBİR)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'SOHBET ZEMİNİ',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.6,
-                                      color: textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  GridView.count(
-                                    crossAxisCount: 3,
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    mainAxisSpacing: 6,
-                                    crossAxisSpacing: 6,
-                                    childAspectRatio: 2.2,
-                                    children: [
-                                      for (final bgOpt in const [
-                                        {'id': 'ice', 'label': 'Buz Mavisi', 'dot': 0xFFEAF0F6},
-                                        {'id': 'mist', 'label': 'Mavi Degrade', 'dot': 0xFFDCE7F3},
-                                        {'id': 'slate', 'label': 'Koyu Gümüş', 'dot': 0xFFE2E6EC},
-                                        {'id': 'dots', 'label': 'Radar Noktalı', 'dot': 0xFFE8EEF5},
-                                        {'id': 'sand', 'label': 'Sıcak Kum', 'dot': 0xFFF3EFE6},
-                                        {'id': 'mint', 'label': 'Adaçayı', 'dot': 0xFFE6EFEA},
-                                      ])
-                                        InkWell(
-                                          borderRadius: BorderRadius.circular(8),
-                                          onTap: () async {
-                                            final id = bgOpt['id'] as String;
-                                            setState(() => _chatBg = id);
-                                            final prefs = await SharedPreferences.getInstance();
-                                            await prefs.setString('mitemasuka_chat_bg', id);
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                                            decoration: BoxDecoration(
-                                              color: _chatBg == bgOpt['id']
-                                                  ? kBrandBlue.withValues(alpha: isDark ? 0.22 : 0.10)
-                                                  : (isDark
-                                                        ? const Color(0xFF333333)
-                                                        : const Color(0xFFF5F5F4)),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: _chatBg == bgOpt['id']
-                                                    ? kBrandBlue
-                                                    : borderColor,
+                                          InkWell(
+                                            borderRadius: BorderRadius.circular(6),
+                                            onTap: () {
+                                              Clipboard.setData(
+                                                const ClipboardData(
+                                                  text: 'info@mitemasuka.com',
+                                                ),
+                                              );
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'info@mitemasuka.com · ${_t('copiedBtn')}',
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(4),
+                                              child: Icon(
+                                                CupertinoIcons.doc_on_doc,
+                                                size: 14,
+                                                color: isDark
+                                                    ? const Color(0xFFA3A3A3)
+                                                    : const Color(0xFF64748B),
                                               ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 11,
-                                                  height: 11,
-                                                  decoration: BoxDecoration(
-                                                    color: Color(bgOpt['dot'] as int),
-                                                    shape: BoxShape.circle,
-                                                    border: Border.all(
-                                                      color: Colors.black.withValues(alpha: 0.15),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Expanded(
-                                                  child: Text(
-                                                    bgOpt['label'] as String,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: _chatBg == bgOpt['id']
-                                                          ? (isDark ? kBrandBlueDarkText : kBrandBlue)
-                                                          : textPrimary,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
                                             ),
                                           ),
-                                        ),
+                                        ],
+                                      ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                            const Divider(height: 12),
-
-                            // 11. TEST MESAFE SİMÜLATÖRÜ
-                            ListTile(
-                              dense: true,
-                              visualDensity: const VisualDensity(vertical: -2),
-                              leading: const Icon(
-                                CupertinoIcons.compass,
-                                size: 18,
-                                color: Color(0xFF6E9482),
-                              ),
-                              title: const Text(
-                                'Test Mesafe Simülatörü',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                              ),
-                              trailing: Text(
-                                _showSimBar ? 'Gizle' : 'Göster',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: textSecondary,
                                 ),
-                              ),
-                              onTap: () {
-                                setState(() {
-                                  _showSimBar = !_showSimBar;
-                                  _showHamburgerMenu = false;
-                                });
-                              },
+                              ],
                             ),
-                            const Divider(height: 12),
-
-                            // 12. İLETİŞİM ALANI
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'İLETİŞİM',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.6,
-                                      color: textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      GestureDetector(
-                                        onTap: () => launchUrl(Uri.parse('mailto:info@mitemasuka.com')),
-                                        child: Row(
-                                          children: [
-                                            Icon(CupertinoIcons.mail, size: 15, color: isDark ? kBrandBlueDarkText : kBrandBlue),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              'info@mitemasuka.com',
-                                              style: TextStyle(
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: textPrimary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: Icon(CupertinoIcons.doc_on_doc, size: 15, color: textSecondary),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () {
-                                          Clipboard.setData(
-                                            const ClipboardData(text: 'info@mitemasuka.com'),
-                                          );
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(
-                                              content: Text('info@mitemasuka.com kopyalandı'),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -4013,5 +5084,211 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         ),
       ),
     );
+  }
+}
+
+class _LucideIconPainter extends CustomPainter {
+  final String type;
+  final Color color;
+
+  const _LucideIconPainter({required this.type, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width / 24.0;
+    canvas.save();
+    canvas.scale(s, s);
+
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    switch (type) {
+      case 'megaphone':
+        final p = Path()
+          ..moveTo(3, 11)
+          ..lineTo(21, 5)
+          ..lineTo(21, 19)
+          ..lineTo(3, 13)
+          ..close();
+        canvas.drawPath(p, stroke);
+        final h = Path()
+          ..moveTo(11.6, 16.8)
+          ..arcToPoint(
+            const Offset(6, 14),
+            radius: const Radius.circular(3),
+            clockwise: true,
+          );
+        canvas.drawPath(h, stroke);
+        break;
+
+      case 'edit3':
+        canvas.drawLine(const Offset(12, 20), const Offset(21, 20), stroke);
+        final pen = Path()
+          ..moveTo(16.5, 3.5)
+          ..cubicTo(17.3, 2.7, 18.7, 2.7, 19.5, 3.5)
+          ..cubicTo(20.3, 4.3, 20.3, 5.7, 19.5, 6.5)
+          ..lineTo(7, 19)
+          ..lineTo(3, 20)
+          ..lineTo(4, 16)
+          ..close();
+        canvas.drawPath(pen, stroke);
+        break;
+
+      case 'ghost':
+        final g = Path()
+          ..moveTo(4, 10)
+          ..arcToPoint(
+            const Offset(20, 10),
+            radius: const Radius.circular(8),
+            clockwise: true,
+          )
+          ..lineTo(20, 22)
+          ..lineTo(17, 19)
+          ..lineTo(14.5, 21.5)
+          ..lineTo(12, 19)
+          ..lineTo(9.5, 21.5)
+          ..lineTo(7, 19)
+          ..lineTo(4, 22)
+          ..close();
+        canvas.drawPath(g, stroke);
+        canvas.drawCircle(const Offset(9, 10), 1.2, fill);
+        canvas.drawCircle(const Offset(15, 10), 1.2, fill);
+        break;
+
+      case 'volume2':
+        final sp = Path()
+          ..moveTo(11, 5)
+          ..lineTo(6, 9)
+          ..lineTo(2, 9)
+          ..lineTo(2, 15)
+          ..lineTo(6, 15)
+          ..lineTo(11, 19)
+          ..close();
+        canvas.drawPath(sp, stroke);
+        final w1 = Path()
+          ..moveTo(15.5, 8.5)
+          ..arcToPoint(
+            const Offset(15.5, 15.5),
+            radius: const Radius.circular(5),
+            clockwise: true,
+          );
+        final w2 = Path()
+          ..moveTo(19, 5)
+          ..arcToPoint(
+            const Offset(19, 19),
+            radius: const Radius.circular(10),
+            clockwise: true,
+          );
+        canvas.drawPath(w1, stroke);
+        canvas.drawPath(w2, stroke);
+        break;
+
+      case 'volumex':
+        final spx = Path()
+          ..moveTo(11, 5)
+          ..lineTo(6, 9)
+          ..lineTo(2, 9)
+          ..lineTo(2, 15)
+          ..lineTo(6, 15)
+          ..lineTo(11, 19)
+          ..close();
+        canvas.drawPath(spx, stroke);
+        canvas.drawLine(const Offset(22, 9), const Offset(16, 15), stroke);
+        canvas.drawLine(const Offset(16, 9), const Offset(22, 15), stroke);
+        break;
+
+      case 'shield_alert':
+        final sh = Path()
+          ..moveTo(12, 22)
+          ..cubicTo(12, 22, 20, 18, 20, 12)
+          ..lineTo(20, 5)
+          ..lineTo(12, 2)
+          ..lineTo(4, 5)
+          ..lineTo(4, 12)
+          ..cubicTo(4, 18, 12, 22, 12, 22)
+          ..close();
+        canvas.drawPath(sh, stroke);
+        canvas.drawLine(const Offset(12, 8), const Offset(12, 12), stroke);
+        canvas.drawCircle(const Offset(12, 16), 1.1, fill);
+        break;
+
+      case 'shield_check':
+        final shc = Path()
+          ..moveTo(12, 22)
+          ..cubicTo(12, 22, 20, 18, 20, 12)
+          ..lineTo(20, 5)
+          ..lineTo(12, 2)
+          ..lineTo(4, 5)
+          ..lineTo(4, 12)
+          ..cubicTo(4, 18, 12, 22, 12, 22)
+          ..close();
+        canvas.drawPath(shc, stroke);
+        final chk = Path()
+          ..moveTo(9, 12)
+          ..lineTo(11, 14)
+          ..lineTo(15, 10);
+        canvas.drawPath(chk, stroke);
+        break;
+
+      case 'palette':
+        final pal = Path()
+          ..moveTo(12, 2)
+          ..arcToPoint(
+            const Offset(2, 12),
+            radius: const Radius.circular(10),
+            clockwise: false,
+          )
+          ..arcToPoint(
+            const Offset(12, 22),
+            radius: const Radius.circular(10),
+            clockwise: false,
+          )
+          ..cubicTo(13.5, 22, 14.5, 21, 14.5, 19.5)
+          ..cubicTo(14.5, 18.2, 13.8, 17, 15, 16)
+          ..cubicTo(16, 15.2, 17.5, 16, 19, 16)
+          ..cubicTo(20.8, 16, 22, 14.3, 22, 12)
+          ..arcToPoint(
+            const Offset(12, 2),
+            radius: const Radius.circular(10),
+            clockwise: false,
+          )
+          ..close();
+        canvas.drawPath(pal, stroke);
+        canvas.drawCircle(const Offset(13.5, 6.5), 1.1, fill);
+        canvas.drawCircle(const Offset(17.5, 10.5), 1.1, fill);
+        canvas.drawCircle(const Offset(8.5, 7.5), 1.1, fill);
+        canvas.drawCircle(const Offset(6.5, 12.5), 1.1, fill);
+        break;
+
+      case 'flask':
+        canvas.drawLine(const Offset(8.5, 2), const Offset(15.5, 2), stroke);
+        final fl = Path()
+          ..moveTo(10, 2)
+          ..lineTo(10, 8.5)
+          ..lineTo(4.5, 18.5)
+          ..cubicTo(3.8, 19.8, 4.7, 21.5, 6.2, 21.5)
+          ..lineTo(17.8, 21.5)
+          ..cubicTo(19.3, 21.5, 20.2, 19.8, 19.5, 18.5)
+          ..lineTo(14, 8.5)
+          ..lineTo(14, 2);
+        canvas.drawPath(fl, stroke);
+        canvas.drawLine(const Offset(7, 15), const Offset(17, 15), stroke);
+        break;
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _LucideIconPainter oldDelegate) {
+    return oldDelegate.type != type || oldDelegate.color != color;
   }
 }
