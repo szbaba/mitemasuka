@@ -525,6 +525,15 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                 .toList();
           }
         });
+        if (_autoTranslate) {
+          for (final m in _messages) {
+            if (m.kind == 'chat' &&
+                m.senderClientId != _myClientId &&
+                RegExp(r'\p{L}', unicode: true).hasMatch(m.text)) {
+              _translateMessage(m, forceManual: false);
+            }
+          }
+        }
         _scrollToBottom();
       } else if (event == 'room_users' && data is Map<String, dynamic>) {
         final list = (data['users'] is List) ? data['users'] as List : [];
@@ -669,6 +678,32 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
     });
   }
 
+  Future<Map<String, String>?> _fetchGtxDirect(
+    String clean,
+    String tl, {
+    String sl = 'auto',
+  }) async {
+    final gtxUri = Uri.parse(
+      'https://translate.googleapis.com/translate_a/single?client=gtx&sl=${Uri.encodeComponent(sl)}&tl=${Uri.encodeComponent(tl)}&dt=t&q=${Uri.encodeComponent(clean)}',
+    );
+    final gtxResp = await http.get(gtxUri);
+    if (gtxResp.statusCode != 200) return null;
+    final decoded = jsonDecode(gtxResp.body);
+    if (decoded is! List || decoded.isEmpty || decoded[0] is! List) return null;
+    final sb = StringBuffer();
+    for (final part in decoded[0] as List) {
+      if (part is List && part.isNotEmpty && part[0] != null) {
+        sb.write(part[0].toString());
+      }
+    }
+    final tr = sb.toString().trim();
+    final detected =
+        (decoded.length > 2 && decoded[2] is String)
+            ? (decoded[2] as String).toLowerCase()
+            : '';
+    return {'translated': tr, 'detectedLang': detected};
+  }
+
   Future<void> _translateMessage(
     ChatMessage msg, {
     bool forceManual = true,
@@ -681,24 +716,20 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
       return;
     }
     if (_translations.containsKey(key) || _translatingIds.contains(key)) return;
+    final clean = msg.text.trim();
+    if (clean.length < 2) return;
     setState(() {
       _translatingIds.add(key);
     });
     try {
-      final resp = await http.post(
-        Uri.parse('$_httpBaseUrl/api/translate'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'text': msg.text,
-          'targetLang': _uiLang,
-          'autoOnly': !forceManual,
-        }),
-      );
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final tr = data['translatedText']?.toString() ?? '';
+      // 1. Önce her zaman kullanıcının arayüz diline (örn: TR) çevir (hello -> Merhaba)
+      final first = await _fetchGtxDirect(clean, _uiLang, sl: 'auto');
+      if (first != null) {
+        final tr = first['translated'] ?? '';
+        final det = first['detectedLang'] ?? '';
         if (tr.isNotEmpty &&
-            tr.trim().toLowerCase() != msg.text.trim().toLowerCase()) {
+            tr.toLowerCase() != clean.toLowerCase() &&
+            !(!forceManual && det.isNotEmpty && det.startsWith(_uiLang))) {
           if (mounted) {
             setState(() {
               _translations[key] = tr;
@@ -708,29 +739,31 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
         }
       }
 
-      // Yedek: Doğrudan Google GTX çeviri uç noktası
-      final target = forceManual
-          ? (_uiLang == 'tr' ? 'en' : 'tr')
-          : _uiLang;
-      final gtxUri = Uri.parse(
-        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${Uri.encodeComponent(target)}&dt=t&q=${Uri.encodeComponent(msg.text.trim())}',
-      );
-      final gtxResp = await http.get(gtxUri);
-      if (gtxResp.statusCode == 200) {
-        final decoded = jsonDecode(gtxResp.body);
-        if (decoded is List && decoded.isNotEmpty && decoded[0] is List) {
-          final sb = StringBuffer();
-          for (final part in decoded[0] as List) {
-            if (part is List && part.isNotEmpty && part[0] != null) {
-              sb.write(part[0].toString());
+      // 2. Manuel "Çevir"e basıldıysa ve mesaj zaten Türkçe ise İngilizceye çevir (Deneme -> Trial)
+      if (forceManual) {
+        final fallbackLang = _uiLang == 'tr' ? 'en' : 'tr';
+        final second = await _fetchGtxDirect(clean, fallbackLang, sl: 'auto');
+        if (second != null) {
+          final tr2 = second['translated'] ?? '';
+          if (tr2.isNotEmpty && tr2.toLowerCase() != clean.toLowerCase()) {
+            if (mounted) {
+              setState(() {
+                _translations[key] = tr2;
+              });
             }
+            return;
           }
-          final tr = sb.toString().trim();
-          if (tr.isNotEmpty &&
-              tr.toLowerCase() != msg.text.trim().toLowerCase() &&
-              mounted) {
+        }
+        final third = await _fetchGtxDirect(
+          clean,
+          _uiLang,
+          sl: _uiLang == 'tr' ? 'en' : 'tr',
+        );
+        if (third != null) {
+          final tr3 = third['translated'] ?? '';
+          if (tr3.isNotEmpty && tr3.toLowerCase() != clean.toLowerCase() && mounted) {
             setState(() {
-              _translations[key] = tr;
+              _translations[key] = tr3;
             });
           }
         }
@@ -998,7 +1031,9 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                     if (hasLetters)
                       _buildActionMenuItem(
                         emoji: '🌐',
-                        label: 'Çevir (Mesajı çevirir)',
+                        label: _translations.containsKey('${item.id}_$_uiLang')
+                            ? 'Orijinali Göster (Çeviriyi gizle)'
+                            : 'Çevir (Mesajı çevirir)',
                         onTap: () {
                           Navigator.of(ctx).pop();
                           _translateMessage(item);
@@ -2140,7 +2175,7 @@ class _MitemasukaHomePageState extends State<MitemasukaHomePage> {
                                                 GestureDetector(
                                                   onTap: () => _translateMessage(item),
                                                   child: Text(
-                                                    'Çevir',
+                                                    translated != null ? 'Orijinal' : 'Çevir',
                                                     style: TextStyle(
                                                       fontSize: 11,
                                                       fontWeight: FontWeight.w500,

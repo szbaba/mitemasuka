@@ -2876,7 +2876,12 @@ export default function MitemasukaPage() {
                             className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-white/10 active:bg-white/15 transition text-left"
                           >
                             <span>🌐</span>
-                            <span>Çevir (Mesajı çevirir)</span>
+                            <span>
+                              {translations[`${item.id}_${uiLang}`] &&
+                              !hiddenTranslationIds[`${item.id}_${uiLang}`]
+                                ? 'Orijinali Göster (Çeviriyi gizle)'
+                                : 'Çevir (Mesajı çevirir)'}
+                            </span>
                           </button>
                         )}
 

@@ -43,37 +43,11 @@ export async function translateTextFree(
   // Sadece sayı, emoji veya noktalama ise çevirme
   if (!new RegExp('\\p{L}', 'u').test(clean)) return null;
 
-  // 1. Öncelik: Merkezi Cloudflare Worker (/api/translate) üzerinden CORS/ITP engelsiz çeviri
   try {
-    const apiRes = await fetch('https://ws.mitemasuka.com/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: clean,
-        targetLang,
-        autoOnly: !forceManual,
-      }),
-    });
-    if (apiRes.ok) {
-      const apiData = await apiRes.json();
-      const tr = String(apiData?.translatedText || '').trim();
-      const det =
-        typeof apiData?.detectedLang === 'string'
-          ? apiData.detectedLang.toLowerCase()
-          : undefined;
-      if (tr && tr.toLowerCase() !== clean.toLowerCase()) {
-        return { translated: tr, detectedLang: det };
-      }
-      if (!forceManual) return null;
-    }
-  } catch {}
-
-  // 2. Yedek: Doğrudan GTX uç noktası
-  try {
-    const fetchGtx = async (tl: string) => {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(
-        tl
-      )}&dt=t&q=${encodeURIComponent(clean)}`;
+    const fetchGtx = async (tl: string, sl: string = 'auto') => {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(
+        sl
+      )}&tl=${encodeURIComponent(tl)}&dt=t&q=${encodeURIComponent(clean)}`;
       const res = await fetch(url);
       if (!res.ok) return null;
       const data = await res.json();
@@ -89,7 +63,7 @@ export async function translateTextFree(
       return { translated, detectedLang };
     };
 
-    const first = await fetchGtx(targetLang);
+    const first = await fetchGtx(targetLang, 'auto');
     if (
       first &&
       first.translated &&
@@ -105,13 +79,25 @@ export async function translateTextFree(
 
     if (forceManual) {
       const fallbackLang = targetLang === 'tr' ? 'en' : 'tr';
-      const second = await fetchGtx(fallbackLang);
+      const second = await fetchGtx(fallbackLang, 'auto');
       if (
         second &&
         second.translated &&
         second.translated.toLowerCase() !== clean.toLowerCase()
       ) {
         return second;
+      }
+      // Kısa kelimeler için açık dil çifti yedeği
+      const third = await fetchGtx(
+        targetLang,
+        targetLang === 'tr' ? 'en' : 'tr'
+      );
+      if (
+        third &&
+        third.translated &&
+        third.translated.toLowerCase() !== clean.toLowerCase()
+      ) {
+        return third;
       }
     }
     return null;
